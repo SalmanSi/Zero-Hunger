@@ -149,6 +149,43 @@ Your PostgreSQL database is hosted on Supabase. Keep credentials private and loa
 
 ---
 
+## Security Checklist (IMPORTANT)
+
+### Step 1: Rotate Database Password
+1. Go to [supabase.com](https://supabase.com) → Your project → Settings → Database
+2. Click "Reset password" under "Database password"
+3. Copy the new password immediately
+4. Update in your deployment platform environment variables
+
+### Step 2: Generate New JWT Secret
+Generate a secure random secret (minimum 32 characters):
+```bash
+# Run this to generate:
+openssl rand -base64 32
+```
+Or use: https://generate-random.org/
+
+### Step 3: Configure Environment Variables
+Set these in your deployment platform (Render.com):
+
+| Variable | Value |
+|----------|-------|
+| DATABASE_URL | postgresql://user:NEW_PASSWORD@host:5432/dbname |
+| JWT_SECRET | your-new-generated-secret |
+| CORS_ORIGINS | https://your-frontend.vercel.app |
+| PORT | 5000 |
+
+**DO NOT commit secrets to GitHub!** Use deployment platform env vars only.
+
+### Step 4: Verify No Secrets in Code
+Ensure `.env` files are NOT tracked in git:
+```bash
+git status
+# Should NOT show any .env files
+```
+
+---
+
 ## Quick Commands
 
 ```bash
