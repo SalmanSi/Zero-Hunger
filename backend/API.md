@@ -106,6 +106,42 @@ Reject a user.
 ### GET /api/admin/users/stats
 Get system statistics.
 
+### PATCH /api/admin/users/:id/suspend
+Suspend a user (blocks all authenticated access until reinstated).
+
+## Notifications
+
+### GET /api/notifications
+Get current user's notifications (newest first, max 100). Query: `unread=true` to filter.
+
+### GET /api/notifications/unread-count
+Returns `{ count: number }`.
+
+### PATCH /api/notifications/:id/read
+Mark a notification as read.
+
+### PATCH /api/notifications/read-all
+Mark all notifications as read.
+
+## Rides
+
+### POST /api/rides/start
+Start a ride for a CLAIMED listing. Requires CONSUMER role.
+
+**Request Body:**
+```json
+{ "listingId": "uuid" }
+```
+
+### PATCH /api/rides/:rideId/arrive
+Mark arrival at pickup location.
+
+### PATCH /api/rides/:rideId/complete
+Complete the ride; marks the listing as COMPLETED.
+
+### GET /api/rides/my-rides
+List rides relevant to the current user (own rides for consumers, rides on own listings for providers).
+
 ## Geocode
 
 ### GET /api/geocode/geocode?address=...

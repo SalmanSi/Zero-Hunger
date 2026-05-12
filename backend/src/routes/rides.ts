@@ -1,11 +1,12 @@
 import { Router, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import prisma from '../utils/prisma';
-import { authenticate, AuthRequest } from '../middleware/auth';
+import { authenticate, requireApproved, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
 router.use(authenticate);
+router.use(requireApproved);
 
 const NOTIFICATION_TYPES = {
   RIDE_STARTED: 'RIDE_STARTED',
@@ -14,7 +15,7 @@ const NOTIFICATION_TYPES = {
   LISTING_CLAIMED: 'LISTING_CLAIMED'
 };
 
-router.post('/ride',
+router.post('/start',
   body('listingId').notEmpty().withMessage('Listing ID is required'),
   
   async (req: AuthRequest, res: Response) => {
@@ -39,12 +40,12 @@ router.post('/ride',
         return res.status(404).json({ error: 'Listing not found' });
       }
 
-      if (listing.status !== 'AVAILABLE') {
-        return res.status(400).json({ error: 'Listing is not available' });
-      }
-
       if (listing.consumerId !== req.user!.id) {
         return res.status(403).json({ error: 'You have not claimed this listing' });
+      }
+
+      if (listing.status !== 'CLAIMED') {
+        return res.status(400).json({ error: 'Listing must be claimed before starting a ride' });
       }
 
       const ride = await prisma.ride.create({
@@ -56,15 +57,17 @@ router.post('/ride',
         }
       });
 
-      await prisma.listing.update({
-        where: { id: listingId },
-        data: { status: 'CLAIMED' }
-      });
+      prisma.notification.create({
+        data: {
+          userId: listing.providerId,
+          listingId: listing.id,
+          type: 'RIDE_STARTED',
+          title: 'Pickup en route',
+          body: `${req.user!.name} is on the way to pick up "${listing.description}"`
+        }
+      }).catch((e) => console.error('Ride notification failed:', e));
 
-      res.status(201).json({
-        ...ride,
-        providerNotificationSent: true
-      });
+      res.status(201).json(ride);
     } catch (error) {
       console.error('Start ride error:', error);
       res.status(500).json({ error: 'Failed to start ride' });

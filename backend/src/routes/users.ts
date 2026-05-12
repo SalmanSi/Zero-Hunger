@@ -99,6 +99,23 @@ router.patch('/:id/reject', async (req: AuthRequest, res: Response) => {
   }
 });
 
+router.patch('/:id/suspend', async (req: AuthRequest, res: Response) => {
+  try {
+    const id = req.params.id as string;
+    const user = await prisma.user.findUnique({ where: { id } });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const updated = await prisma.user.update({
+      where: { id },
+      data: { status: 'SUSPENDED' },
+      select: { id: true, name: true, email: true, role: true, status: true }
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error('Suspend user error:', error);
+    res.status(500).json({ error: 'Failed to suspend user' });
+  }
+});
+
 router.get('/stats', async (req: AuthRequest, res: Response) => {
   try {
     const [totalUsers, providers, consumers, pending, listings, availableListings, claimedListings, totalServings] = await Promise.all([

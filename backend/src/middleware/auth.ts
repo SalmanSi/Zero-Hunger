@@ -8,19 +8,20 @@ export interface AuthRequest extends Request {
     email: string;
     role: string;
     name: string;
+    status: string;
   };
 }
 
 export const authenticate = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
-    
+
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string; email: string; role: string; name: string };
-    
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as { id: string };
+
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
       select: { id: true, email: true, role: true, name: true, status: true }
@@ -34,11 +35,24 @@ export const authenticate = async (req: AuthRequest, res: Response, next: NextFu
       return res.status(403).json({ error: 'Account rejected' });
     }
 
+    if (user.status === 'SUSPENDED') {
+      return res.status(403).json({ error: 'Account suspended' });
+    }
+
     req.user = user;
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid token' });
   }
+};
+
+export const requireApproved = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.user) return res.status(401).json({ error: 'Not authenticated' });
+  if (req.user.role === 'ADMIN') return next();
+  if (req.user.status !== 'APPROVED') {
+    return res.status(403).json({ error: 'Account pending admin approval' });
+  }
+  next();
 };
 
 export const authorize = (...roles: string[]) => {
