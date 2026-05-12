@@ -1,0 +1,98 @@
+name: Deploy backend to EC2
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Build TypeScript
+        working-directory: backend
+        run: npm run build
+
+      - name: Prepare release bundle
+        run: |
+          mkdir -p release
+          cp -r backend/dist release/
+          cp -r backend/prisma release/
+          cp backend/package.json backend/package-lock.json release/
+
+      - name: Add SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Rsync to EC2
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" \
+            release/ \
+            ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:${{ secrets.EC2_APP_DIR }}/backend-release/
+
+      - name: Activate release on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            APP_DIR="${{ secrets.EC2_APP_DIR }}"
+            cd "$APP_DIR/backend-release"
+            # Install production deps against the shipped lockfile
+            npm ci --omit=dev
+            npx prisma generate
+            # Reuse the same .env from the live backend folder
+            ln -sf "$APP_DIR/backend/.env" .env
+            # Promote: swap release into place atomically-ish
+            cd "$APP_DIR"
+            rm -rf backend-previous
+            [ -d backend ] && mv backend backend-previous || true
+            mv backend-release backend
+            pm2 restart zerohunger-api --update-env || pm2 start backend/dist/index.js --name zerohunger-api
+            pm2 save
+
+      - name: Health check
+        run: |
+          sleep 4
+          for i in 1 2 3 4 5; do
+            if curl -fsS "http://${{ secrets.EC2_HOST }}/api/health" > /dev/null; then
+              echo "Health check passed"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 3
+          done
+          echo "Health check failed"
+          exit 1
