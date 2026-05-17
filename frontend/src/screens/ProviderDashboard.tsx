@@ -176,6 +176,14 @@ const ProviderDashboard = () => {
     return () => clearInterval(pollInterval);
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!isDetailsModalOpen || !selectedListing) return;
+    const updatedListing = listings.find((listing) => listing.id === selectedListing.id);
+    if (updatedListing && updatedListing !== selectedListing) {
+      setSelectedListing(updatedListing);
+    }
+  }, [isDetailsModalOpen, listings, selectedListing?.id]);
+
   const handlePostSurplus = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
@@ -289,9 +297,15 @@ const ProviderDashboard = () => {
     }
   };
 
-  const handleClaimedListingClick = (listing: any) => {
+  const handleClaimedListingClick = async (listing: any) => {
     if (listing.status === 'CLAIMED' || listing.status === 'COMPLETED') {
-      setSelectedListing(listing);
+      try {
+        const latestListing = await listingsApi.get(listing.id);
+        setSelectedListing(latestListing);
+        setListings((currentListings: any[]) => currentListings.map((item: any) => item.id === latestListing.id ? latestListing : item));
+      } catch {
+        setSelectedListing(listing);
+      }
       setIsDetailsModalOpen(true);
     }
   };
