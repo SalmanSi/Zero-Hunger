@@ -9,6 +9,21 @@ const getCurrentUser = () => {
   return userStr ? JSON.parse(userStr) : null;
 };
 
+const parseResponse = async (response: Response, fallbackMessage: string) => {
+  const contentType = response.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+  const data = isJson ? await response.json() : await response.text();
+
+  if (!response.ok) {
+    if (isJson) {
+      throw new Error(data.error || data.message || fallbackMessage);
+    }
+    throw new Error(typeof data === 'string' && data.trim() ? data.trim().slice(0, 180) : fallbackMessage);
+  }
+
+  return data;
+};
+
 export const setAuthData = (token: string, user: any) => {
   localStorage.setItem('zh_token', token);
   localStorage.setItem('zh_current_user', JSON.stringify(user));
@@ -28,11 +43,7 @@ export const api = {
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       }
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Request failed');
-    }
-    return response.json();
+    return parseResponse(response, 'Request failed');
   },
 
   post: async (endpoint: string, data: any) => {
@@ -45,11 +56,7 @@ export const api = {
       },
       body: JSON.stringify(data)
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Request failed');
-    }
-    return response.json();
+    return parseResponse(response, 'Request failed');
   },
 
   patch: async (endpoint: string, data?: any) => {
@@ -62,11 +69,7 @@ export const api = {
       },
       body: data ? JSON.stringify(data) : undefined
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Request failed');
-    }
-    return response.json();
+    return parseResponse(response, 'Request failed');
   },
 
   delete: async (endpoint: string) => {
@@ -78,11 +81,7 @@ export const api = {
         ...(token ? { Authorization: `Bearer ${token}` } : {})
       }
     });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Request failed');
-    }
-    return response.json();
+    return parseResponse(response, 'Request failed');
   }
 };
 
@@ -108,6 +107,8 @@ export const auth = {
     password: string;
     address: string;
     phone?: string;
+    lat?: number;
+    lng?: number;
     role: 'PROVIDER' | 'CONSUMER';
   }) => {
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
@@ -139,7 +140,12 @@ export const auth = {
     lat?: number;
     lng?: number;
   }) => {
-    return api.patch('/auth/profile', userData);
+    const updatedUser = await api.patch('/auth/profile', userData);
+    const currentUser = getCurrentUser();
+    if (currentUser) {
+      localStorage.setItem('zh_current_user', JSON.stringify({ ...currentUser, ...updatedUser }));
+    }
+    return updatedUser;
   }
 };
 
@@ -173,6 +179,8 @@ export const listings = {
     servings?: number;
     foodType?: string;
     location?: string;
+    lat?: number;
+    lng?: number;
     pickupEnd?: string;
   }) => {
     return api.patch(`/listings/${id}`, data);
@@ -223,9 +231,22 @@ export const geocode = {
   }
 };
 
+export const publicStats = {
+  get: async () => {
+    const response = await fetch(`${API_BASE_URL}/public/stats`, {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to get public stats');
+    }
+    return response.json();
+  }
+};
+
 export const rides = {
   start: async (listingId: string) => {
-    return api.post('/rides', { listingId });
+    return api.post('/rides/start', { listingId });
   },
 
   arrive: async (rideId: string) => {
@@ -234,6 +255,10 @@ export const rides = {
 
   complete: async (rideId: string) => {
     return api.patch(`/rides/${rideId}/complete`);
+  },
+
+  confirmHandoff: async (rideId: string) => {
+    return api.patch(`/rides/${rideId}/confirm-handoff`);
   },
 
   getMyRides: async () => {

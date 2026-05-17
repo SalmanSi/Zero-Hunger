@@ -13,7 +13,7 @@ import {
   Star,
   ArrowRight
 } from 'lucide-react';
-import { listings, users as usersApi } from '../utils/api';
+import { publicStats } from '../utils/api';
 
 interface Listing {
   id: string;
@@ -50,12 +50,14 @@ const CountUp: React.FC<{ end: number; suffix?: string; prefix?: string }> = ({ 
 
 const ImpactPage = () => {
   const [stats, setStats] = useState({
-    totalMeals: 15850,
-    activeProviders: 24,
-    activeNGOs: 18,
-    totalRescues: 156,
-    thisWeek: 12,
-    co2Saved: 3200
+    totalMeals: 0,
+    activeProviders: 0,
+    activeNGOs: 0,
+    totalRescues: 0,
+    thisWeek: 0,
+    co2Saved: 0,
+    weeklyServings: [] as { date: string; servings: number }[],
+    topLocations: [] as { location: string; servings: number; listings: number }[]
   });
   const [recentActivity, setRecentActivity] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,10 +65,18 @@ const ImpactPage = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const data = await listings.getAll();
-        setRecentActivity(data.slice(0, 5));
-        const totalServings = data.reduce((acc: number, l: Listing) => acc + l.servings, 0);
-        setStats(prev => ({ ...prev, totalMeals: totalServings + 12500 }));
+        const data = await publicStats.get();
+        setRecentActivity(data.recentListings || []);
+        setStats({
+          totalMeals: data.mealsSaved || 0,
+          activeProviders: data.activeProviders || 0,
+          activeNGOs: data.activeNGOs || 0,
+          totalRescues: data.activeRescues || 0,
+          thisWeek: data.rescuesToday || 0,
+          co2Saved: Math.round((data.mealsSaved || 0) * 0.45),
+          weeklyServings: data.weeklyServings || [],
+          topLocations: data.topLocations || []
+        });
       } catch (e) {
         console.error('Failed to fetch impact data');
       } finally {
@@ -111,9 +121,9 @@ const ImpactPage = () => {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-16">
           {[
             { icon: Utensils, label: 'Meals Saved', value: stats.totalMeals, color: 'from-primary to-green-600' },
-            { icon: Heart, label: 'NGO Partners', value: stats.activeNGOs, color: 'from-orange-500 to-red-500' },
-            { icon: Package, label: 'Active Providers', value: stats.activeProviders, color: 'from-blue-500 to-cyan-500' },
-            { icon: Clock, label: 'Rescues Today', value: stats.thisWeek, color: 'from-purple-500 to-pink-500' }
+            { icon: Heart, label: 'NGO Partners', value: stats.activeNGOs, color: 'from-primary to-green-600' },
+            { icon: Package, label: 'Active Providers', value: stats.activeProviders, color: 'from-primary to-green-600' },
+            { icon: Clock, label: 'Rescues Today', value: stats.thisWeek, color: 'from-primary to-green-600' }
           ].map((stat, idx) => (
             <div key={idx} className="bg-white rounded-[2rem] p-6 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all">
               <div className={`w-12 h-12 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center mb-4`}>
@@ -138,11 +148,14 @@ const ImpactPage = () => {
               </div>
               <div className="flex items-center gap-2 text-green-600">
                 <TrendingUp size={20} />
-                <span className="font-bold">+18%</span>
+                <span className="font-bold">{stats.weeklyServings.reduce((sum, day) => sum + day.servings, 0).toLocaleString()}</span>
               </div>
             </div>
             <div className="flex items-end gap-3 h-40">
-              {[65, 45, 78, 52, 89, 72, 95].map((height, idx) => (
+              {(stats.weeklyServings.length ? stats.weeklyServings : Array.from({ length: 7 }, (_, index) => ({ date: String(index), servings: 0 }))).map((day, idx, days) => {
+                const maxServings = Math.max(...days.map((item) => item.servings), 1);
+                const height = Math.max(8, (day.servings / maxServings) * 100);
+                return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-2">
                   <div 
                     className="w-full bg-gradient-to-t from-primary to-green-500 rounded-t-lg transition-all hover:opacity-80"
@@ -150,7 +163,7 @@ const ImpactPage = () => {
                   />
                   <span className="text-xs text-slate-400">{['M', 'T', 'W', 'T', 'F', 'S', 'S'][idx]}</span>
                 </div>
-              ))}
+              )})}
             </div>
           </div>
 
@@ -158,25 +171,23 @@ const ImpactPage = () => {
           <div className="bg-white rounded-[2.5rem] p-8 shadow-xl">
             <h3 className="text-xl font-bold text-slate-900 mb-8">Top Sectors</h3>
             <div className="space-y-4">
-              {[
-                { sector: 'F-7', meals: 4250, percent: 85 },
-                { sector: 'G-8', meals: 3180, percent: 64 },
-                { sector: 'F-10', meals: 2450, percent: 49 },
-                { sector: 'E-11', meals: 1890, percent: 38 }
-              ].map((item, idx) => (
+              {stats.topLocations.slice(0, 4).map((item, idx, locations) => {
+                const maxServings = Math.max(...locations.map((location) => location.servings), 1);
+                return (
                 <div key={idx} className="space-y-2">
                   <div className="flex justify-between">
-                    <span className="font-bold text-slate-700">Sector {item.sector}</span>
-                    <span className="text-sm text-slate-500">{item.meals.toLocaleString()} meals</span>
+                    <span className="font-bold text-slate-700">{item.location}</span>
+                    <span className="text-sm text-slate-500">{item.servings.toLocaleString()} servings</span>
                   </div>
                   <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-gradient-to-r from-primary to-green-500 rounded-full transition-all duration-1000"
-                      style={{ width: `${item.percent}%` }}
+                      style={{ width: `${Math.max(12, (item.servings / maxServings) * 100)}%` }}
                     />
                   </div>
                 </div>
-              ))}
+              )})}
+              {stats.topLocations.length === 0 && <p className="text-sm text-slate-500">No completed pickup location data yet.</p>}
             </div>
           </div>
         </div>

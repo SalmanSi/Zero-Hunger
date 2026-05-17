@@ -33,8 +33,11 @@ import {
   Calendar,
   TrendingUp
 } from 'lucide-react';
-import { listings as listingsApi, auth, getCurrentUser } from '../utils/api';
+import { listings as listingsApi, auth, getCurrentUser, rides } from '../utils/api';
 import SettingsPage from '../components/SettingsPage';
+import MapView from '../components/MapView';
+import { FeedbackBanner, FeedbackModal } from '../components/Feedback';
+import { reverseGeocode } from '../utils/geocode';
 
 interface Listing {
   id: string;
@@ -49,6 +52,17 @@ interface Listing {
   pickupEnd: string;
   status: 'AVAILABLE' | 'CLAIMED' | 'EXPIRED' | 'COMPLETED';
   consumerId?: string;
+  rides?: Ride[];
+}
+
+interface Ride {
+  id: string;
+  listingId: string;
+  consumerId: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'ARRIVED' | 'COMPLETED' | 'CANCELLED';
+  startTime?: string;
+  arrivalTime?: string;
+  endTime?: string;
 }
 
 const ProviderDashboard = () => {
@@ -81,6 +95,8 @@ const ProviderDashboard = () => {
     allergies: string;
     storage: string;
     prepInstructions: string;
+    lat?: number;
+    lng?: number;
   }>({
     description: '',
     servings: 10,
@@ -93,8 +109,16 @@ const ProviderDashboard = () => {
     dietary: [],
     allergies: '',
     storage: 'AMBIENT',
-    prepInstructions: ''
+    prepInstructions: '',
+    lat: undefined,
+    lng: undefined
   });
+  const [feedback, setFeedback] = useState<{ tone: 'success' | 'error' | 'info'; title: string; message?: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [confirmingRideId, setConfirmingRideId] = useState<string | null>(null);
+  const providerMealsSaved = listings
+    .filter((listing) => listing.status === 'CLAIMED' || listing.status === 'COMPLETED')
+    .reduce((sum, listing) => sum + listing.servings, 0);
 
   useEffect(() => {
     const user = getCurrentUser();
@@ -165,14 +189,17 @@ const ProviderDashboard = () => {
         servings: formData.servings,
         foodType: formData.foodType,
         location: formData.location,
+        lat: formData.lat ?? currentUser.lat,
+        lng: formData.lng ?? currentUser.lng,
         pickupEnd: pickupEndDate
       } as any);
 
       setListings([newListing, ...listings]);
       setIsModalOpen(false);
-      setFormData({ description: '', servings: 10, foodType: 'Hot Meal', expiryHours: 4, location: '', unit: 'servings', weight: '', packageCount: '', dietary: [], allergies: '', storage: 'AMBIENT', prepInstructions: '' });
+      setFeedback({ tone: 'success', title: 'Listing posted', message: 'Nearby approved NGOs can now see this pickup.' });
+      setFormData({ description: '', servings: 10, foodType: 'Hot Meal', expiryHours: 4, location: '', unit: 'servings', weight: '', packageCount: '', dietary: [], allergies: '', storage: 'AMBIENT', prepInstructions: '', lat: undefined, lng: undefined });
     } catch (error: any) {
-      alert(error.message || 'Failed to create listing');
+      setFeedback({ tone: 'error', title: 'Could not create listing', message: error.message || 'Failed to create listing' });
     } finally {
       setPosting(false);
     }
@@ -184,13 +211,19 @@ const ProviderDashboard = () => {
   };
 
   const handleDeleteListing = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this listing?')) return;
+    setDeleteTarget(id);
+  };
+
+  const confirmDeleteListing = async () => {
+    if (!deleteTarget) return;
     try {
-      await listingsApi.delete(id);
-      setListings(listings.filter(l => l.id !== id));
+      await listingsApi.delete(deleteTarget);
+      setListings(listings.filter(l => l.id !== deleteTarget));
+      setFeedback({ tone: 'success', title: 'Listing removed', message: 'The surplus listing is no longer visible to NGOs.' });
     } catch (error: any) {
-      alert(error.message || 'Failed to delete listing');
+      setFeedback({ tone: 'error', title: 'Could not delete listing', message: error.message || 'Failed to delete listing' });
     }
+    setDeleteTarget(null);
   };
 
   const handleViewDetails = async (listing: any) => {
@@ -212,7 +245,9 @@ const ProviderDashboard = () => {
       dietary: listing.dietary || [],
       allergies: listing.allergies || '',
       storage: listing.storage || 'AMBIENT',
-      prepInstructions: listing.prepInstructions || ''
+      prepInstructions: listing.prepInstructions || '',
+      lat: listing.lat,
+      lng: listing.lng
     } as any);
     setIsEditModalOpen(true);
   };
@@ -228,15 +263,29 @@ const ProviderDashboard = () => {
         servings: formData.servings,
         foodType: formData.foodType,
         location: formData.location,
+        lat: formData.lat,
+        lng: formData.lng,
         pickupEnd: pickupEndDate
       } as any);
       setListings(listings.map((l: any) => l.id === editListing.id ? updated : l));
       setIsEditModalOpen(false);
       setEditListing(null);
+      setFeedback({ tone: 'success', title: 'Listing updated', message: 'Pickup details and timing were saved.' });
     } catch (error: any) {
-      alert(error.message || 'Failed to update listing');
+      setFeedback({ tone: 'error', title: 'Could not update listing', message: error.message || 'Failed to update listing' });
     } finally {
       setPosting(false);
+    }
+  };
+
+  const handlePickupPinSelect = async (lat: number, lng: number) => {
+    setFormData((current) => ({ ...current, lat, lng }));
+    try {
+      const result = await reverseGeocode(lat, lng);
+      const resolvedLocation = result?.address || `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+      setFormData((current) => ({ ...current, lat, lng, location: resolvedLocation }));
+    } catch {
+      setFormData((current) => ({ ...current, lat, lng, location: `${lat.toFixed(5)}, ${lng.toFixed(5)}` }));
     }
   };
 
@@ -246,6 +295,37 @@ const ProviderDashboard = () => {
       setIsDetailsModalOpen(true);
     }
   };
+
+  const handleConfirmHandoff = async (rideId: string) => {
+    setConfirmingRideId(rideId);
+    try {
+      const updatedRide = await rides.confirmHandoff(rideId);
+      setListings((currentListings: any[]) => currentListings.map((listing: any) => {
+        if (listing.id !== updatedRide.listingId) return listing;
+        return {
+          ...listing,
+          status: 'COMPLETED',
+          rides: (listing.rides || []).map((ride: any) => ride.id === updatedRide.id ? updatedRide : ride)
+        };
+      }));
+      setSelectedListing((current: any) => current && current.id === updatedRide.listingId
+        ? {
+            ...current,
+            status: 'COMPLETED',
+            rides: (current.rides || []).map((ride: any) => ride.id === updatedRide.id ? updatedRide : ride)
+          }
+        : current
+      );
+      setFeedback({ tone: 'success', title: 'Handoff confirmed', message: 'The ride and claim are now marked completed.' });
+    } catch (error: any) {
+      setFeedback({ tone: 'error', title: 'Could not confirm handoff', message: error.message || 'Failed to complete this ride.' });
+    } finally {
+      setConfirmingRideId(null);
+    }
+  };
+
+  const selectedRide = selectedListing?.rides?.find((ride: Ride) => ride.status !== 'CANCELLED')
+    || selectedListing?.rides?.[0];
 
   return (
     <div className="bg-surface font-body text-on-surface min-h-screen flex">
@@ -293,7 +373,7 @@ const ProviderDashboard = () => {
           </button>
         </nav>
         <div className="px-4 mt-auto space-y-2">
-          <button onClick={handleLogout} className="flex items-center gap-3 w-full py-3 px-4 text-secondary hover:bg-secondary/10 rounded-2xl transition-all">
+          <button onClick={handleLogout} className="flex items-center gap-3 w-full py-3 px-4 text-primary hover:bg-primary/10 rounded-2xl transition-all">
             <LogOut size={20} />
             {sidebarOpen && <span className="font-bold text-sm">Logout</span>}
           </button>
@@ -328,6 +408,16 @@ const ProviderDashboard = () => {
         </header>
 
         <main className="flex-1 pt-24 pb-28 px-8 max-w-7xl mx-auto w-full">
+          {feedback && (
+            <div className="mb-6">
+              <FeedbackBanner
+                tone={feedback.tone}
+                title={feedback.title}
+                message={feedback.message}
+                onDismiss={() => setFeedback(null)}
+              />
+            </div>
+          )}
           {activeTab === 'dashboard' && (
             <section className="grid grid-cols-1 lg:grid-cols-12 gap-10">
               <div className="lg:col-span-8 space-y-10">
@@ -371,7 +461,7 @@ const ProviderDashboard = () => {
                               <span className="font-bold text-sm">{l.servings} Servings</span>
                             </td>
                             <td className="px-8 py-6 text-center">
-                              <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${l.status === 'AVAILABLE' ? 'bg-primary-fixed text-on-primary-fixed-variant' : l.status === 'CLAIMED' ? 'bg-secondary text-white' : 'bg-secondary-container text-on-secondary-container'
+                              <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${l.status === 'AVAILABLE' ? 'bg-primary-fixed text-on-primary-fixed-variant' : l.status === 'CLAIMED' ? 'bg-primary text-white' : 'bg-primary-fixed text-on-primary-fixed-variant'
                                 }`}>
                                 {l.status}
                               </span>
@@ -416,16 +506,16 @@ const ProviderDashboard = () => {
                         <ShoppingBasket size={24} />
                       </div>
                       <div>
-                        <p className="text-2xl font-black leading-tight">{listings.length * 15 + 1400}</p>
+                        <p className="text-2xl font-black leading-tight">{providerMealsSaved}</p>
                         <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">Meals Saved</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-4 bg-surface-container-low p-5 rounded-2xl">
-                      <div className="w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center text-secondary flex-shrink-0">
+                      <div className="w-12 h-12 bg-primary-fixed rounded-xl flex items-center justify-center text-primary flex-shrink-0">
                         <Heart size={24} />
                       </div>
                       <div>
-                        <p className="text-2xl font-black leading-tight">12</p>
+                        <p className="text-2xl font-black leading-tight">{ngos.length}</p>
                         <p className="text-[10px] font-bold text-on-surface-variant uppercase tracking-widest">NGO Partners</p>
                       </div>
                     </div>
@@ -433,7 +523,7 @@ const ProviderDashboard = () => {
                 </div>
 
                 {lastClaimedListing && (
-                  <div className="bg-secondary text-white rounded-[2rem] p-8 shadow-xl shadow-orange-100">
+                  <div className="bg-primary text-white rounded-[2rem] p-8 shadow-xl shadow-green-100">
                     <div className="flex items-center gap-3 mb-4">
                       <BellRing size={20} />
                       <span className="text-xs font-bold uppercase tracking-widest">Claimed - Rider En Route</span>
@@ -459,7 +549,7 @@ const ProviderDashboard = () => {
                 {ngos.map(ngo => (
                   <div key={ngo.id} className="bg-white p-6 rounded-3xl border border-outline-variant/10 shadow-sm hover:translate-y-[-4px] transition-all">
                     <div className="flex items-center gap-4 mb-6">
-                      <div className="w-14 h-14 bg-secondary-container rounded-2xl flex items-center justify-center text-on-secondary-container">
+                      <div className="w-14 h-14 bg-primary-fixed rounded-2xl flex items-center justify-center text-on-primary-fixed-variant">
                         <Heart size={28} />
                       </div>
                       <div>
@@ -515,7 +605,7 @@ const ProviderDashboard = () => {
                             <div className="text-[10px] text-on-surface-variant font-medium">{l.foodType}</div>
                           </td>
                           <td className="px-8 py-6 text-center">
-                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${l.status === 'AVAILABLE' ? 'bg-primary-fixed text-on-primary-fixed-variant' : 'bg-secondary-container text-on-secondary-container'
+                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${l.status === 'AVAILABLE' ? 'bg-primary-fixed text-on-primary-fixed-variant' : 'bg-primary-fixed text-on-primary-fixed-variant'
                               }`}>
                               {l.status}
                             </span>
@@ -618,6 +708,29 @@ const ProviderDashboard = () => {
                   </div>
                 </div>
 
+                <div className="space-y-3">
+                  <label className="text-sm font-bold text-on-surface-variant px-1">Pickup Pin</label>
+                  <div className="h-64 overflow-hidden rounded-2xl border border-outline-variant/10">
+                    <MapView
+                      center={formData.lat && formData.lng ? [formData.lat, formData.lng] : [currentUser?.lat || 33.6844, currentUser?.lng || 73.0479]}
+                      zoom={14}
+                      height="100%"
+                      location={formData.lat && formData.lng ? { lat: formData.lat, lng: formData.lng, name: formData.description || currentUser?.name, address: formData.location } : undefined}
+                      onLocationSelect={handlePickupPinSelect}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-3 text-xs text-on-surface-variant">
+                    <span>Click the map to place the exact collection point.</span>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, lat: currentUser?.lat, lng: currentUser?.lng, location: formData.location || currentUser?.address || '' })}
+                      className="font-bold text-primary hover:underline"
+                    >
+                      Use profile location
+                    </button>
+                  </div>
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-on-surface-variant px-1">Expiry (Available for next hours)</label>
                   <div className="flex gap-4">
@@ -644,6 +757,17 @@ const ProviderDashboard = () => {
           </div>
         </div>
       )}
+
+      <FeedbackModal
+        open={Boolean(deleteTarget)}
+        tone="warning"
+        title="Delete this listing?"
+        message="NGOs will no longer be able to claim this surplus item."
+        confirmLabel="Delete listing"
+        cancelLabel="Keep listing"
+        onConfirm={confirmDeleteListing}
+        onCancel={() => setDeleteTarget(null)}
+      />
 
       {/* Listing Details Modal (for CLAIMED/COMPLETED listings) */}
       {isDetailsModalOpen && selectedListing && (
@@ -698,7 +822,7 @@ const ProviderDashboard = () => {
               </div>
 
               {(selectedListing.status === 'CLAIMED' || selectedListing.status === 'COMPLETED') && selectedListing.consumer && (
-                <div className="bg-secondary/10 rounded-2xl p-6 space-y-4">
+                <div className="bg-primary/10 rounded-2xl p-6 space-y-4">
                   <h4 className="font-bold text-lg flex items-center gap-2">
                     <Building2 size={18} />
                     Claimed Organization
@@ -718,6 +842,66 @@ const ProviderDashboard = () => {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {selectedRide && (
+                <div className="bg-surface-container-low rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Pickup Ride</p>
+                      <p className="font-black">
+                        {selectedRide.status === 'IN_PROGRESS'
+                          ? 'NGO en route'
+                          : selectedRide.status === 'ARRIVED'
+                            ? 'NGO arrived'
+                            : selectedRide.status === 'COMPLETED'
+                              ? 'Handoff completed'
+                              : selectedRide.status}
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase text-primary">
+                      {selectedRide.status}
+                    </span>
+                  </div>
+
+                  {selectedRide.startTime && (
+                    <p className="text-xs text-on-surface-variant">
+                      Started {new Date(selectedRide.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                  )}
+
+                  {selectedRide.status === 'IN_PROGRESS' && (
+                    <p className="text-sm text-on-surface-variant">
+                      The NGO has started pickup. Confirm handoff after they mark arrival and collect the food.
+                    </p>
+                  )}
+
+                  {selectedRide.status === 'ARRIVED' && (
+                    <button
+                      onClick={() => handleConfirmHandoff(selectedRide.id)}
+                      disabled={confirmingRideId === selectedRide.id}
+                      className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-5 py-3 text-sm font-bold text-white hover:bg-green-700 disabled:opacity-50"
+                    >
+                      {confirmingRideId === selectedRide.id ? (
+                        <>
+                          <Loader2 size={18} className="animate-spin" />
+                          Confirming...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 size={18} />
+                          Confirm Handoff
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {selectedRide.status === 'COMPLETED' && (
+                    <div className="rounded-2xl bg-green-50 p-4 text-sm font-bold text-green-800">
+                      This claim has been confirmed and completed.
+                    </div>
+                  )}
                 </div>
               )}
 
