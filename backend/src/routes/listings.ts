@@ -30,7 +30,7 @@ const publicListingSelect = {
   prepInstructions: true,
   createdAt: true,
   updatedAt: true,
-  provider: { select: { name: true } }
+  provider: { select: { name: true, address: true, phone: true, lat: true, lng: true } }
 };
 
 router.get('/', async (req: AuthRequest, res: Response) => {
@@ -42,7 +42,11 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         where: { providerId: req.user!.id },
         include: {
           provider: { select: { name: true, address: true } },
-          consumer: { select: { name: true, address: true, phone: true } }
+          consumer: { select: { name: true, address: true, phone: true } },
+          rides: {
+            include: { consumer: { select: { name: true, address: true, phone: true } } },
+            orderBy: { createdAt: 'desc' }
+          }
         },
         orderBy: { createdAt: 'desc' }
       });
@@ -55,9 +59,14 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         select: { lat: true, lng: true, radius: true }
       });
 
-      const where: any = { status: 'AVAILABLE', pickupEnd: { gt: new Date() } };
+      const where: any = {
+        OR: [
+          { status: 'AVAILABLE', pickupEnd: { gt: new Date() } },
+          { consumerId: req.user!.id }
+        ]
+      };
       if (req.query.sector) {
-        where.location = { contains: req.query.sector as string };
+        where.AND = [{ location: { contains: req.query.sector as string } }];
       }
 
       const rows = await prisma.listing.findMany({
@@ -265,7 +274,11 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
       where: { id },
       include: {
         provider: { select: { name: true, address: true, phone: true } },
-        consumer: { select: { name: true, address: true, phone: true } }
+        consumer: { select: { name: true, address: true, phone: true } },
+        rides: {
+          include: { consumer: { select: { name: true, address: true, phone: true } } },
+          orderBy: { createdAt: 'desc' }
+        }
       }
     });
 
@@ -299,7 +312,7 @@ router.get('/:id', async (req: AuthRequest, res: Response) => {
 router.patch('/:id', requireApproved, async (req: AuthRequest, res: Response) => {
   try {
     const id = req.params.id as string;
-    const { description, servings, foodType, location, pickupEnd } = req.body;
+    const { description, servings, foodType, location, lat, lng, pickupEnd } = req.body;
 
     const listing = await prisma.listing.findUnique({
       where: { id }
@@ -324,6 +337,8 @@ router.patch('/:id', requireApproved, async (req: AuthRequest, res: Response) =>
         ...(servings && { servings }),
         ...(foodType && { foodType }),
         ...(location && { location }),
+        ...(typeof lat === 'number' && { lat }),
+        ...(typeof lng === 'number' && { lng }),
         ...(pickupEnd && { pickupEnd: new Date(pickupEnd) })
       }
     });

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.authorize = exports.authenticate = void 0;
+exports.authorize = exports.requireApproved = exports.authenticate = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma_1 = __importDefault(require("../utils/prisma"));
 const authenticate = async (req, res, next) => {
@@ -23,6 +23,9 @@ const authenticate = async (req, res, next) => {
         if (user.status === 'REJECTED') {
             return res.status(403).json({ error: 'Account rejected' });
         }
+        if (user.status === 'SUSPENDED') {
+            return res.status(403).json({ error: 'Account suspended' });
+        }
         req.user = user;
         next();
     }
@@ -31,6 +34,17 @@ const authenticate = async (req, res, next) => {
     }
 };
 exports.authenticate = authenticate;
+const requireApproved = (req, res, next) => {
+    if (!req.user)
+        return res.status(401).json({ error: 'Not authenticated' });
+    if (req.user.role === 'ADMIN')
+        return next();
+    if (req.user.status !== 'APPROVED') {
+        return res.status(403).json({ error: 'Account pending admin approval' });
+    }
+    next();
+};
+exports.requireApproved = requireApproved;
 const authorize = (...roles) => {
     return (req, res, next) => {
         if (!req.user) {

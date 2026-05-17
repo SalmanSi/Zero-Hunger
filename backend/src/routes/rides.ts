@@ -48,6 +48,18 @@ router.post('/start',
         return res.status(400).json({ error: 'Listing must be claimed before starting a ride' });
       }
 
+      const existingRide = await prisma.ride.findFirst({
+        where: {
+          listingId,
+          consumerId: req.user!.id,
+          status: { in: ['PENDING', 'IN_PROGRESS', 'ARRIVED'] }
+        }
+      });
+
+      if (existingRide) {
+        return res.json(existingRide);
+      }
+
       const ride = await prisma.ride.create({
         data: {
           listingId,
@@ -150,6 +162,77 @@ router.patch('/:rideId/complete', async (req: AuthRequest, res: Response) => {
   } catch (error) {
     console.error('Complete ride error:', error);
     res.status(500).json({ error: 'Failed to complete ride' });
+  }
+});
+
+router.patch('/:rideId/confirm-handoff', async (req: AuthRequest, res: Response) => {
+  try {
+    const rideId = req.params.rideId as string;
+    const user = req.user!;
+
+    if (user.role !== 'PROVIDER') {
+      return res.status(403).json({ error: 'Only providers can confirm handoff' });
+    }
+
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+      include: { listing: true }
+    });
+
+    if (!ride) {
+      return res.status(404).json({ error: 'Ride not found' });
+    }
+
+    if (ride.listing.providerId !== user.id) {
+      return res.status(403).json({ error: 'Not authorized to confirm this handoff' });
+    }
+
+    if (ride.status === 'COMPLETED') {
+      return res.json(ride);
+    }
+
+    if (ride.status !== 'ARRIVED') {
+      return res.status(400).json({ error: 'The NGO must mark arrival before handoff can be confirmed' });
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const completedRide = await tx.ride.update({
+        where: { id: rideId },
+        data: {
+          status: 'COMPLETED',
+          endTime: new Date()
+        },
+        include: {
+          listing: {
+            include: {
+              provider: { select: { name: true, address: true, phone: true } }
+            }
+          }
+        }
+      });
+
+      await tx.listing.update({
+        where: { id: ride.listingId },
+        data: { status: 'COMPLETED' }
+      });
+
+      return completedRide;
+    });
+
+    prisma.notification.create({
+      data: {
+        userId: ride.consumerId,
+        listingId: ride.listingId,
+        type: 'RIDE_COMPLETED',
+        title: 'Handoff confirmed',
+        body: `${user.name} confirmed pickup for "${ride.listing.description}"`
+      }
+    }).catch((e) => console.error('Consumer notification failed:', e));
+
+    res.json(updated);
+  } catch (error) {
+    console.error('Confirm handoff error:', error);
+    res.status(500).json({ error: 'Failed to confirm handoff' });
   }
 });
 

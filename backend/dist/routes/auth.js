@@ -16,7 +16,7 @@ router.post('/register', (0, express_validator_1.body)('name').notEmpty().withMe
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
-        const { name, email, password, address, phone, role } = req.body;
+        const { name, email, password, address, phone, role, lat, lng } = req.body;
         const existingUser = await prisma_1.default.user.findUnique({
             where: { email }
         });
@@ -31,6 +31,8 @@ router.post('/register', (0, express_validator_1.body)('name').notEmpty().withMe
                 password: hashedPassword,
                 address,
                 phone: phone || '',
+                lat: typeof lat === 'number' ? lat : null,
+                lng: typeof lng === 'number' ? lng : null,
                 role: role,
                 status: 'PENDING'
             }
@@ -44,7 +46,11 @@ router.post('/register', (0, express_validator_1.body)('name').notEmpty().withMe
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                status: user.status
+                status: user.status,
+                address: user.address,
+                phone: user.phone,
+                lat: user.lat,
+                lng: user.lng
             }
         });
     }
@@ -79,7 +85,10 @@ router.post('/login', (0, express_validator_1.body)('email').isEmail().withMessa
                 email: user.email,
                 role: user.role,
                 status: user.status,
-                address: user.address
+                address: user.address,
+                phone: user.phone,
+                lat: user.lat,
+                lng: user.lng
             }
         });
     }
@@ -100,6 +109,9 @@ router.get('/me', auth_1.authenticate, async (req, res) => {
                 status: true,
                 address: true,
                 phone: true,
+                lat: true,
+                lng: true,
+                radius: true,
                 createdAt: true
             }
         });
@@ -118,6 +130,8 @@ router.patch('/profile', auth_1.authenticate, async (req, res) => {
                 ...(name && { name }),
                 ...(address && { address }),
                 ...(phone !== undefined && { phone }),
+                ...(typeof lat === 'number' && { lat }),
+                ...(typeof lng === 'number' && { lng }),
             },
             select: {
                 id: true,
@@ -126,7 +140,10 @@ router.patch('/profile', auth_1.authenticate, async (req, res) => {
                 role: true,
                 status: true,
                 address: true,
-                phone: true
+                phone: true,
+                lat: true,
+                lng: true,
+                radius: true
             }
         });
         res.json(updatedUser);
