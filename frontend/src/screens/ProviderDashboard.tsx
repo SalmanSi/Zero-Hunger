@@ -338,7 +338,11 @@ const ProviderDashboard = () => {
     }
   };
 
-  const selectedRide = selectedListing?.rides?.find((ride: Ride) => ride.status !== 'CANCELLED')
+  const selectedRide = selectedListing?.rides?.find((ride: Ride) => ride.status === 'ARRIVED')
+    || selectedListing?.rides?.find((ride: Ride) => ride.status === 'IN_PROGRESS')
+    || selectedListing?.rides?.find((ride: Ride) => ride.status === 'PENDING')
+    || selectedListing?.rides?.find((ride: Ride) => ride.status === 'COMPLETED')
+    || selectedListing?.rides?.find((ride: Ride) => ride.status !== 'CANCELLED')
     || selectedListing?.rides?.[0];
 
   return (
@@ -859,8 +863,9 @@ const ProviderDashboard = () => {
                 </div>
               )}
 
-              {selectedRide && (
-                <div className="bg-surface-container-low rounded-2xl p-5 space-y-4">
+              <div className="bg-surface-container-low rounded-2xl p-5 space-y-4">
+                {selectedRide ? (
+                  <>
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Pickup Ride</p>
@@ -916,8 +921,16 @@ const ProviderDashboard = () => {
                       This claim has been confirmed and completed.
                     </div>
                   )}
-                </div>
-              )}
+                  </>
+                ) : (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Pickup Ride</p>
+                    <p className="mt-2 text-sm text-on-surface-variant">
+                      No ride has been started for this claim yet. The handoff button appears after the NGO starts the ride and marks arrival.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               <div className="bg-surface-container-low rounded-xl p-4">
                 <div className="flex items-center gap-2 text-on-surface-variant mb-2">
