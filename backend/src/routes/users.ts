@@ -25,6 +25,9 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         status: true,
         address: true,
         phone: true,
+        lat: true,
+        lng: true,
+        radius: true,
         createdAt: true
       },
       orderBy: { createdAt: 'desc' }
@@ -118,7 +121,29 @@ router.patch('/:id/suspend', async (req: AuthRequest, res: Response) => {
 
 router.get('/stats', async (req: AuthRequest, res: Response) => {
   try {
-    const [totalUsers, providers, consumers, pending, listings, availableListings, claimedListings, totalServings] = await Promise.all([
+    const completedStatuses = ['CLAIMED', 'COMPLETED'] as const;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - 6);
+    weekStart.setHours(0, 0, 0, 0);
+
+    const [
+      totalUsers,
+      providers,
+      consumers,
+      pending,
+      listings,
+      availableListings,
+      claimedListings,
+      completedListings,
+      totalServings,
+      mealsSaved,
+      rescuesToday,
+      weeklyRows,
+      topProviderRows,
+      topLocationRows
+    ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { role: 'PROVIDER' } }),
       prisma.user.count({ where: { role: 'CONSUMER' } }),
@@ -126,8 +151,47 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
       prisma.listing.count(),
       prisma.listing.count({ where: { status: 'AVAILABLE' } }),
       prisma.listing.count({ where: { status: 'CLAIMED' } }),
-      prisma.listing.aggregate({ _sum: { servings: true } })
+      prisma.listing.count({ where: { status: 'COMPLETED' } }),
+      prisma.listing.aggregate({ _sum: { servings: true } }),
+      prisma.listing.aggregate({ where: { status: { in: [...completedStatuses] } }, _sum: { servings: true } }),
+      prisma.listing.count({ where: { status: { in: [...completedStatuses] }, updatedAt: { gte: startOfToday } } }),
+      prisma.listing.findMany({
+        where: { status: { in: [...completedStatuses] }, updatedAt: { gte: weekStart } },
+        select: { servings: true, updatedAt: true }
+      }),
+      prisma.listing.groupBy({
+        by: ['providerId'],
+        where: { status: { in: [...completedStatuses] } },
+        _sum: { servings: true },
+        _count: { _all: true },
+        orderBy: { _sum: { servings: 'desc' } },
+        take: 5
+      }),
+      prisma.listing.groupBy({
+        by: ['location'],
+        where: { status: { in: [...completedStatuses] } },
+        _sum: { servings: true },
+        _count: { _all: true },
+        orderBy: { _sum: { servings: 'desc' } },
+        take: 5
+      })
     ]);
+
+    const providerNames = await prisma.user.findMany({
+      where: { id: { in: topProviderRows.map((row) => row.providerId) } },
+      select: { id: true, name: true }
+    });
+    const providerNameById = new Map(providerNames.map((provider) => [provider.id, provider.name]));
+    const weeklyServings = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(weekStart);
+      day.setDate(weekStart.getDate() + index);
+      return {
+        date: day.toISOString().slice(0, 10),
+        servings: weeklyRows
+          .filter((row) => row.updatedAt.toISOString().slice(0, 10) === day.toISOString().slice(0, 10))
+          .reduce((sum, row) => sum + row.servings, 0)
+      };
+    });
 
     res.json({
       totalUsers,
@@ -137,7 +201,22 @@ router.get('/stats', async (req: AuthRequest, res: Response) => {
       listings,
       availableListings,
       claimedListings,
-      totalServings: totalServings._sum.servings || 0
+      completedListings,
+      totalServings: totalServings._sum.servings || 0,
+      mealsSaved: mealsSaved._sum.servings || 0,
+      rescuesToday,
+      weeklyServings,
+      topLocations: topLocationRows.map((row) => ({
+        location: row.location,
+        servings: row._sum.servings || 0,
+        listings: row._count._all
+      })),
+      topProviders: topProviderRows.map((row) => ({
+        providerId: row.providerId,
+        name: providerNameById.get(row.providerId) || 'Unknown provider',
+        servings: row._sum.servings || 0,
+        listings: row._count._all
+      }))
     });
   } catch (error) {
     console.error('Get stats error:', error);

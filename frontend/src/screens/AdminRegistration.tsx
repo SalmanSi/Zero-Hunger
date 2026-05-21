@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ShieldCheck } from 'lucide-react';
 import { auth } from '../utils/api';
+import { FeedbackBanner, FeedbackModal } from '../components/Feedback';
 
 const AdminRegistration = () => {
     const navigate = useNavigate();
@@ -10,6 +11,7 @@ const AdminRegistration = () => {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [showUnavailable, setShowUnavailable] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -24,8 +26,7 @@ const AdminRegistration = () => {
                 address: 'HQ Islamabad',
                 role: 'PROVIDER'
             });
-            alert('Registration is not available for admin. Please contact system administrator.');
-            navigate('/login');
+            setShowUnavailable(true);
         } catch (err: any) {
             setError(err.message || 'Registration failed');
         } finally {
@@ -90,7 +91,7 @@ const AdminRegistration = () => {
                         </div>
 
                         {error && (
-                            <div className="p-4 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100">{error}</div>
+                            <FeedbackBanner tone="error" title="Request failed" message={error} onDismiss={() => setError('')} />
                         )}
 
                         <button
@@ -103,6 +104,14 @@ const AdminRegistration = () => {
                     </form>
                 </div>
             </div>
+            <FeedbackModal
+                open={showUnavailable}
+                tone="info"
+                title="Admin access is restricted"
+                message="Admin accounts are provisioned by the system owner. Contact the maintainer instead of registering here."
+                confirmLabel="Go to login"
+                onConfirm={() => navigate('/login')}
+            />
         </div>
     );
 };

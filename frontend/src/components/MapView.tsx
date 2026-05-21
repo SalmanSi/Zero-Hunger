@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -34,6 +34,15 @@ function RecenterMap({ center }: { center: [number, number] }) {
   return null;
 }
 
+function ClickHandler({ onLocationSelect }: { onLocationSelect?: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click: (event) => {
+      onLocationSelect?.(event.latlng.lat, event.latlng.lng);
+    },
+  });
+  return null;
+}
+
 const MapView: React.FC<MapViewProps> = ({
   center = [33.6844, 73.0479],
   zoom = 13,
@@ -45,8 +54,6 @@ const MapView: React.FC<MapViewProps> = ({
   const position: [number, number] = location 
     ? [location.lat, location.lng] 
     : center;
-
-const IslamabadCenter: [number, number] = [33.6844, 73.0479];
 
   return (
     <MapContainer
@@ -60,6 +67,7 @@ const IslamabadCenter: [number, number] = [33.6844, 73.0479];
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
       <RecenterMap center={position} />
+      <ClickHandler onLocationSelect={onLocationSelect} />
       {location && (
         <Marker position={[location.lat, location.lng]} icon={customIcon}>
           <Popup>

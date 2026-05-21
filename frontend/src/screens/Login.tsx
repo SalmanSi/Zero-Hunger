@@ -69,7 +69,7 @@ const Login = () => {
             {/* Background Effects */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-1/4 -left-32 w-64 h-64 bg-primary/10 rounded-full blur-3xl animate-pulse" />
-                <div className="absolute bottom-1/4 -right-32 w-64 h-64 bg-secondary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+                <div className="absolute bottom-1/4 -right-32 w-64 h-64 bg-primary/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
             </div>
 
             <div className={`max-w-md w-full relative transition-all duration-700 ease-out ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
@@ -156,7 +156,7 @@ const Login = () => {
                             </Link>
                             <Link 
                                 to="/ngo-registration" 
-                                className="py-3 text-center border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:border-orange-500 hover:text-orange-500 transition-all"
+                                className="py-3 text-center border-2 border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:border-primary hover:text-primary transition-all"
                             >
                                 NGO
                             </Link>

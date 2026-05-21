@@ -16,7 +16,7 @@ import {
   Droplets
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { listings } from '../utils/api';
+import { publicStats } from '../utils/api';
 
 interface Listing {
   id: string;
@@ -83,18 +83,17 @@ const CountUp: React.FC<{ end: number; suffix?: string; prefix?: string }> = ({ 
 
 const Welcome = () => {
   const [recentListings, setRecentListings] = useState<Listing[]>([]);
-  const [stats, setStats] = useState({ mealsSaved: 12850, partners: 158, activeRescues: 45 });
+  const [stats, setStats] = useState({ mealsSaved: 0, partners: 0, activeRescues: 0 });
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const data = await listings.getAll();
-        setRecentListings(data.filter((l: Listing) => l.status === 'AVAILABLE').slice(0, 4));
-        const totalServings = data.reduce((acc: number, l: Listing) => acc + l.servings, 0);
+        const data = await publicStats.get();
+        setRecentListings(data.recentListings || []);
         setStats({
-          mealsSaved: totalServings + 12500,
-          partners: 158,
-          activeRescues: data.filter((l: Listing) => l.status === 'AVAILABLE').length + 42
+          mealsSaved: data.mealsSaved || 0,
+          partners: data.partners || 0,
+          activeRescues: data.activeRescues || 0
         });
       } catch (e) {
         console.error('Failed to fetch listings');
@@ -108,7 +107,7 @@ const Welcome = () => {
       {/* Animated Background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-10 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-40 right-10 w-80 h-80 bg-secondary/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute bottom-40 right-10 w-80 h-80 bg-primary/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
       </div>
 
       {/* Navigation */}
@@ -226,7 +225,7 @@ const Welcome = () => {
                     <div className="flex items-center gap-4">
                       <div className="flex items-center gap-2">
                         <Droplets size={18} className="text-blue-500" />
-                        <span className="text-2xl font-black text-slate-800"><CountUp end={Math.floor(stats.mealsSaved / 1000)} suffix="k" /></span>
+                      <span className="text-2xl font-black text-slate-800"><CountUp end={stats.mealsSaved} /></span>
                       </div>
                       <span className="text-slate-400">|</span>
                       <div className="text-sm">
@@ -254,7 +253,7 @@ const Welcome = () => {
             {[
               { icon: Utensils, title: 'List Surplus', desc: 'Providers post available food with details and pickup window.', color: 'from-primary to-green-600' },
               { icon: Bell, title: 'Get Alerts', desc: 'Verified NGOs receive instant notifications for new listings.', color: 'from-blue-500 to-cyan-500' },
-              { icon: Heart, title: 'Pickup & Help', desc: 'NGOs collect and distribute food to beneficiaries.', color: 'from-orange-500 to-red-500' }
+              { icon: Heart, title: 'Pickup & Help', desc: 'NGOs collect and distribute food to beneficiaries.', color: 'from-primary to-green-600' }
             ].map((step, idx) => (
               <AnimatedCard key={idx} delay={200 + idx * 150}>
                 <div className="relative bg-white rounded-[2.5rem] p-8 shadow-xl hover:shadow-2xl transition-all hover:-translate-y-2 group">
@@ -313,14 +312,14 @@ const Welcome = () => {
             </AnimatedCard>
 
             <AnimatedCard delay={300}>
-              <div className="group relative bg-white rounded-[2.5rem] p-8 shadow-xl hover:shadow-2xl border-2 border-transparent hover:border-secondary/20 transition-all hover:-translate-y-2">
-                <div className="h-56 rounded-2xl mb-6 overflow-hidden bg-gradient-to-br from-orange-50 to-red-50">
+              <div className="group relative bg-white rounded-[2.5rem] p-8 shadow-xl hover:shadow-2xl border-2 border-transparent hover:border-primary/20 transition-all hover:-translate-y-2">
+                <div className="h-56 rounded-2xl mb-6 overflow-hidden bg-gradient-to-br from-green-50 to-emerald-50">
                   <div className="w-full h-full flex items-center justify-center">
-                    <Heart size={48} className="text-orange-300" />
+                    <Heart size={48} className="text-primary/30" />
                   </div>
                 </div>
                 <div className="flex items-center gap-4 mb-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-orange-500 to-red-500 rounded-2xl flex items-center justify-center text-white">
+                  <div className="w-14 h-14 bg-gradient-to-br from-primary to-green-600 rounded-2xl flex items-center justify-center text-white">
                     <Heart size={24} />
                   </div>
                   <h3 className="text-2xl font-headline font-bold">Verified NGO</h3>
@@ -331,12 +330,12 @@ const Welcome = () => {
                 <ul className="space-y-3 mb-8">
                   {['Instant food alerts', 'Sector-based filtering', 'Quality assurance'].map((feat, i) => (
                     <li key={i} className="flex items-center gap-3 text-sm">
-                      <CheckCircle2 className="text-orange-500" size={18} />
+                      <CheckCircle2 className="text-primary" size={18} />
                       {feat}
                     </li>
                   ))}
                 </ul>
-                <Link to="/ngo-registration" className="block text-center w-full py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white font-bold rounded-2xl hover:shadow-xl hover:shadow-orange-200 hover:-translate-y-1 active:scale-[0.98] transition-all">
+                <Link to="/ngo-registration" className="block text-center w-full py-4 bg-gradient-to-r from-primary to-green-600 text-white font-bold rounded-2xl hover:shadow-xl hover:shadow-green-200 hover:-translate-y-1 active:scale-[0.98] transition-all">
                   Apply for Verification
                 </Link>
               </div>

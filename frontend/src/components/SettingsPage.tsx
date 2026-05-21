@@ -17,7 +17,8 @@ import {
   Locate
 } from 'lucide-react';
 import { auth } from '../utils/api';
-import { searchLocations, isValidPakistanLocation, SearchResult } from '../utils/geocode';
+import { searchLocations, reverseGeocode, isValidPakistanLocation, SearchResult } from '../utils/geocode';
+import { FeedbackBanner } from './Feedback';
 
 const customIcon = new L.Icon({
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -38,6 +39,8 @@ interface SettingsPageProps {
     phone: string;
     role: string;
     status: string;
+    lat?: number;
+    lng?: number;
   };
   onUpdate: (user: any) => void;
 }
@@ -69,6 +72,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [feedback, setFeedback] = useState<{ tone: 'error' | 'warning' | 'info'; title: string; message?: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
@@ -82,6 +86,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
       setName(user.name);
       setAddress(user.address);
       setPhone(user.phone || '');
+      if (typeof user.lat === 'number' && typeof user.lng === 'number') {
+        setSelectedLocation({ lat: user.lat, lng: user.lng });
+        setSearchQuery(user.address || `${user.lat.toFixed(5)}, ${user.lng.toFixed(5)}`);
+      }
     }
   }, [user]);
 
@@ -137,17 +145,17 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
 
   const handleMapClick = async (lat: number, lng: number) => {
     if (!isValidPakistanLocation(lat, lng)) {
-      alert('Please select a location within Pakistan.');
+      setFeedback({ tone: 'warning', title: 'Outside service area', message: 'Please select a location within Pakistan.' });
       return;
     }
     
     setSelectedLocation({ lat, lng });
     
     try {
-      const reverseResult = await searchLocations(`${lat},${lng}`, 1);
-      if (reverseResult.length > 0) {
-        setAddress(reverseResult[0].address);
-        setSearchQuery(reverseResult[0].address);
+      const reverseResult = await reverseGeocode(lat, lng);
+      if (reverseResult) {
+        setAddress(reverseResult.address);
+        setSearchQuery(reverseResult.address);
       } else {
         setAddress(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
         setSearchQuery(`${lat.toFixed(5)}, ${lng.toFixed(5)}, Pakistan`);
@@ -160,7 +168,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
 
   const handleDetectLocation = () => {
     if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
+      setFeedback({ tone: 'error', title: 'Location unavailable', message: 'Geolocation is not supported by your browser.' });
       return;
     }
     
@@ -170,7 +178,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
         const { latitude, longitude } = position.coords;
         
         if (!isValidPakistanLocation(latitude, longitude)) {
-          alert('Please enable location access within Pakistan.');
+          setFeedback({ tone: 'warning', title: 'Outside service area', message: 'Please enable location access within Pakistan.' });
           setLoading(false);
           return;
         }
@@ -178,10 +186,10 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
         setSelectedLocation({ lat: latitude, lng: longitude });
         
         try {
-          const results = await searchLocations(`${latitude},${longitude}`, 1);
-          if (results.length > 0) {
-            setAddress(results[0].address);
-            setSearchQuery(results[0].address);
+          const result = await reverseGeocode(latitude, longitude);
+          if (result) {
+            setAddress(result.address);
+            setSearchQuery(result.address);
           } else {
             setAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
             setSearchQuery(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}, Pakistan`);
@@ -194,7 +202,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
         }
       },
       (error) => {
-        alert('Unable to detect location. Please search manually.');
+        setFeedback({ tone: 'error', title: 'Could not detect location', message: error.message || 'Please search manually or click on the map.' });
         setLoading(false);
       }
     );
@@ -203,6 +211,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
   const handleSave = async () => {
     setSaving(true);
     setSuccess(false);
+    setFeedback(null);
     
     try {
       const updatedUser = await auth.updateProfile({
@@ -217,7 +226,7 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (error: any) {
-      alert(error.message || 'Failed to update profile');
+      setFeedback({ tone: 'error', title: 'Could not save profile', message: error.message || 'Failed to update profile' });
     } finally {
       setSaving(false);
     }
@@ -239,13 +248,22 @@ const SettingsPage: React.FC<SettingsPageProps> = ({ user, onUpdate }) => {
         </p>
       </div>
 
+      {feedback && (
+        <FeedbackBanner
+          tone={feedback.tone}
+          title={feedback.title}
+          message={feedback.message}
+          onDismiss={() => setFeedback(null)}
+        />
+      )}
+
       {/* Profile Form */}
       <div className="bg-white rounded-[2.5rem] shadow-xl p-8">
         <div className="flex items-center gap-3 mb-8">
           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
             isProvider 
               ? 'bg-gradient-to-br from-primary to-green-600' 
-              : 'bg-gradient-to-br from-orange-500 to-red-500'
+              : 'bg-gradient-to-br from-primary to-green-600'
           }`}>
             {isProvider ? <Building2 size={24} className="text-white" /> : <Heart size={24} className="text-white" />}
           </div>

@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { auth, getCurrentUser } from '../utils/api';
 import MapView from '../components/MapView';
+import { FeedbackBanner, FeedbackModal } from '../components/Feedback';
+import { reverseGeocode } from '../utils/geocode';
 
 const ProviderRegistration = () => {
   const navigate = useNavigate();
@@ -24,6 +26,23 @@ const ProviderRegistration = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mapLocation, setMapLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  const handleMapSelect = async (lat: number, lng: number) => {
+    setMapLocation({ lat, lng });
+    setGeocoding(true);
+    try {
+      const result = await reverseGeocode(lat, lng);
+      if (result?.address) {
+        setAddress(result.address);
+      }
+    } catch {
+      // Keep the pin; the user can still type the address manually.
+    } finally {
+      setGeocoding(false);
+    }
+  };
 
   useEffect(() => {
     const user = getCurrentUser();
@@ -50,10 +69,11 @@ const ProviderRegistration = () => {
         password,
         address,
         phone,
+        lat: mapLocation?.lat,
+        lng: mapLocation?.lng,
         role: 'PROVIDER'
       });
-      alert('Registration submitted! Our team will verify your establishment within 24 hours.');
-      navigate('/login');
+      setShowSuccess(true);
     } catch (err: any) {
       setError(err.message || 'Registration failed. Please try again.');
     } finally {
@@ -83,7 +103,7 @@ const ProviderRegistration = () => {
       <main className="pt-32 pb-20 px-4 md:px-8 max-w-6xl mx-auto">
         {/* Header Section */}
         <header className="mb-16 text-center md:text-left">
-          <p className="text-secondary font-bold text-xs tracking-[0.2em] uppercase mb-4">Partner With Us</p>
+          <p className="text-primary font-bold text-xs tracking-[0.2em] uppercase mb-4">Partner With Us</p>
           <h1 className="text-5xl md:text-6xl font-black text-on-surface tracking-tight leading-tight mb-6 font-headline">Provider Registration</h1>
           <p className="text-on-surface-variant max-w-2xl text-lg leading-relaxed font-medium">
             Synchronize surplus food distribution across Islamabad. Your registration helps us verify your establishment and connect you with local rescue agencies.
@@ -128,13 +148,16 @@ const ProviderRegistration = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Full Address (Islamabad)</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">
+                    Full Address (Islamabad)
+                    {geocoding && <span className="ml-2 normal-case tracking-normal text-primary">Filling from map…</span>}
+                  </label>
                   <textarea
                     required
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     className="w-full bg-surface-container-low border border-outline-variant/10 rounded-2xl px-6 py-4 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all outline-none resize-none font-medium"
-                    placeholder="Street number, Sector, Landmark..."
+                    placeholder="Type the address, or pin it on the map →"
                     rows={3}
                   />
                 </div>
@@ -143,7 +166,7 @@ const ProviderRegistration = () => {
               {/* Contact Info Card */}
               <section className="bg-white p-10 rounded-[2.5rem] shadow-ambient border border-outline-variant/5 space-y-8">
                 <div className="flex items-start md:items-center gap-4 mb-2">
-                  <div className="p-3 bg-secondary/10 rounded-2xl text-secondary flex-shrink-0">
+                  <div className="p-3 bg-primary/10 rounded-2xl text-primary flex-shrink-0">
                     <Phone size={24} />
                   </div>
                   <h2 className="text-2xl font-bold font-headline">Primary Contact</h2>
@@ -197,7 +220,7 @@ const ProviderRegistration = () => {
               </section>
 
               {error && (
-                <div className="p-4 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100">{error}</div>
+                <FeedbackBanner tone="error" title="Registration failed" message={error} onDismiss={() => setError('')} />
               )}
 
               <div className="flex flex-col sm:flex-row justify-between items-center pt-6 gap-6">
@@ -222,19 +245,28 @@ const ProviderRegistration = () => {
               <div className="p-8 border-b border-outline-variant/5">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-3">
-                    <MapPin className="text-secondary" size={24} />
+                    <MapPin className="text-primary" size={24} />
                     <h3 className="font-bold text-xl font-headline">Collection Point</h3>
                   </div>
-                  <span className="text-[10px] font-bold text-secondary uppercase tracking-widest bg-secondary/10 px-3 py-1 rounded-full">Live Zone</span>
+                  <span className="text-[10px] font-bold text-primary uppercase tracking-widest bg-primary/10 px-3 py-1 rounded-full">Live Zone</span>
                 </div>
                 <p className="text-sm text-on-surface-variant font-medium">Help delivery riders find your pickup point precisely.</p>
               </div>
               <div className="h-[450px]">
                 <MapView 
-                  center={address ? [33.6844, 73.0479] : [33.6844, 73.0479]}
+                  center={mapLocation ? [mapLocation.lat, mapLocation.lng] : [33.6844, 73.0479]}
                   zoom={13}
+                  location={mapLocation ? { ...mapLocation, name, address } : undefined}
                   height="100%"
+                  onLocationSelect={handleMapSelect}
                 />
+              </div>
+              <div className="border-t border-outline-variant/5 p-5">
+                <p className="text-xs font-bold text-on-surface-variant">
+                  {mapLocation
+                    ? `Selected pickup coordinates: ${mapLocation.lat.toFixed(5)}, ${mapLocation.lng.toFixed(5)}`
+                    : 'Click the map to pin the pickup entrance for riders.'}
+                </p>
               </div>
             </div>
 
@@ -260,6 +292,14 @@ const ProviderRegistration = () => {
           </div>
         </div>
       </main>
+      <FeedbackModal
+        open={showSuccess}
+        tone="success"
+        title="Registration submitted"
+        message="Your provider application is ready for admin review. You can sign in after approval."
+        confirmLabel="Go to login"
+        onConfirm={() => navigate('/login')}
+      />
     </div>
   );
 };

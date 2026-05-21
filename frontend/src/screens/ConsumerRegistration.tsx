@@ -1,17 +1,37 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Heart, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { Heart, ArrowLeft, ShieldCheck, MapPin } from 'lucide-react';
 import { auth, getCurrentUser } from '../utils/api';
+import { FeedbackBanner, FeedbackModal } from '../components/Feedback';
+import MapView from '../components/MapView';
+import { reverseGeocode } from '../utils/geocode';
 
 const ConsumerRegistration = () => {
     const navigate = useNavigate();
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
     const [phone, setPhone] = useState('');
-    const [regNumber, setRegNumber] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [mapLocation, setMapLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [geocoding, setGeocoding] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(false);
+
+    const handleMapSelect = async (lat: number, lng: number) => {
+        setMapLocation({ lat, lng });
+        setGeocoding(true);
+        try {
+            const result = await reverseGeocode(lat, lng);
+            if (result?.address) {
+                setAddress(result.address);
+            }
+        } catch {
+            // Keep the pin; the user can still type the address manually.
+        } finally {
+            setGeocoding(false);
+        }
+    };
 
     useEffect(() => {
         const user = getCurrentUser();
@@ -38,10 +58,11 @@ const ConsumerRegistration = () => {
                 password,
                 address,
                 phone,
+                lat: mapLocation?.lat,
+                lng: mapLocation?.lng,
                 role: 'CONSUMER'
             });
-            alert('Application submitted! Please wait for admin approval.');
-            navigate('/login');
+            setShowSuccess(true);
         } catch (err: any) {
             setError(err.message || 'Registration failed. Please try again.');
         } finally {
@@ -52,14 +73,14 @@ const ConsumerRegistration = () => {
     return (
         <div className="min-h-screen bg-surface flex items-center justify-center p-6">
             <div className="max-w-2xl w-full">
-                <Link to="/" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-secondary transition-colors mb-10 group">
+                <Link to="/" className="inline-flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors mb-10 group">
                     <ArrowLeft size={18} className="group-hover:-translate-x-1 transition-transform" />
                     <span className="font-bold text-sm">Back to Selection</span>
                 </Link>
 
                 <div className="bg-white p-12 rounded-[2.5rem] shadow-ambient border border-outline-variant/10">
                     <div className="flex items-start md:items-center gap-4 mb-10">
-                        <div className="w-12 h-12 bg-secondary/10 rounded-2xl flex items-center justify-center text-secondary flex-shrink-0">
+                        <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center text-primary flex-shrink-0">
                             <Heart size={24} />
                         </div>
                         <div>
@@ -69,38 +90,50 @@ const ConsumerRegistration = () => {
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-8">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Organization Name</label>
-                                <input
-                                    required
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    placeholder="e.g. Edhi Foundation"
-                                    className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-secondary focus:ring-2 focus:ring-secondary/20 transition-all outline-none font-medium"
-                                />
-                            </div>
-<div className="space-y-2">
-                            <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Registration Number</label>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Organization Name</label>
                             <input
                                 required
-                                value={regNumber}
-                                onChange={(e) => setRegNumber(e.target.value)}
-                                placeholder="REG-123456"
-                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-secondary focus:ring-2 focus:ring-secondary/20 transition-all outline-none font-medium"
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="e.g. Edhi Foundation"
+                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
                             />
-                        </div>
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Headquarters Address</label>
+                            <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">
+                                Headquarters Address
+                                {geocoding && <span className="ml-2 normal-case tracking-normal text-primary">Filling from map…</span>}
+                            </label>
                             <textarea
                                 required
                                 value={address}
                                 onChange={(e) => setAddress(e.target.value)}
-                                placeholder="Full physical address for pickup coordination"
-                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-secondary focus:ring-2 focus:ring-secondary/20 transition-all outline-none min-h-[120px] font-medium"
+                                placeholder="Type the address, or pin it on the map below"
+                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none min-h-[120px] font-medium"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 ml-1">
+                                <MapPin size={14} className="text-primary" />
+                                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Pin Your Location</label>
+                            </div>
+                            <div className="h-[300px] rounded-2xl overflow-hidden border border-outline-variant/10">
+                                <MapView
+                                    center={mapLocation ? [mapLocation.lat, mapLocation.lng] : [33.6844, 73.0479]}
+                                    zoom={13}
+                                    location={mapLocation ? { ...mapLocation, name, address } : undefined}
+                                    height="100%"
+                                    onLocationSelect={handleMapSelect}
+                                />
+                            </div>
+                            <p className="text-xs font-medium text-on-surface-variant ml-1">
+                                {mapLocation
+                                    ? `Selected coordinates: ${mapLocation.lat.toFixed(5)}, ${mapLocation.lng.toFixed(5)}`
+                                    : 'Click the map to pin your headquarters — the address fills in automatically.'}
+                            </p>
                         </div>
 
                         <div className="space-y-2">
@@ -110,7 +143,7 @@ const ConsumerRegistration = () => {
                                 value={phone}
                                 onChange={(e) => setPhone(e.target.value)}
                                 placeholder="+92 300 1234567"
-                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-secondary focus:ring-2 focus:ring-secondary/20 transition-all outline-none font-medium"
+                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
                                 type="tel"
                             />
                         </div>
@@ -122,19 +155,19 @@ const ConsumerRegistration = () => {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 placeholder="Min 6 characters"
-                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-secondary focus:ring-2 focus:ring-secondary/20 transition-all outline-none font-medium"
+                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
                                 type="password"
                                 minLength={6}
                             />
                         </div>
 
                         {error && (
-                            <div className="p-4 bg-red-50 text-red-600 text-sm rounded-2xl border border-red-100">{error}</div>
+                            <FeedbackBanner tone="error" title="Registration failed" message={error} onDismiss={() => setError('')} />
                         )}
 
-                        <div className="bg-secondary/5 p-6 rounded-2xl border border-secondary/10 flex gap-4">
-                            <ShieldCheck className="text-secondary shrink-0" size={24} />
-                            <p className="text-xs text-secondary font-medium leading-relaxed">
+                        <div className="bg-primary/5 p-6 rounded-2xl border border-primary/10 flex gap-4">
+                            <ShieldCheck className="text-primary shrink-0" size={24} />
+                            <p className="text-xs text-primary font-medium leading-relaxed">
                                 <strong>Safety Protocol:</strong> All NGO accounts require manual verification to ensure food safety standards are maintained during distribution.
                             </p>
                         </div>
@@ -142,13 +175,21 @@ const ConsumerRegistration = () => {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full py-5 bg-secondary text-white rounded-2xl font-bold shadow-lg shadow-orange-100 active:scale-[0.98] transition-all disabled:opacity-50"
+                            className="w-full py-5 bg-primary text-white rounded-2xl font-bold shadow-lg shadow-green-100 active:scale-[0.98] transition-all disabled:opacity-50"
                         >
                             {loading ? 'Submitting...' : 'Submit Application'}
                         </button>
                     </form>
                 </div>
             </div>
+            <FeedbackModal
+                open={showSuccess}
+                tone="success"
+                title="Application submitted"
+                message="Your NGO account is queued for admin verification. You can sign in after approval."
+                confirmLabel="Go to login"
+                onConfirm={() => navigate('/login')}
+            />
         </div>
     );
 };
