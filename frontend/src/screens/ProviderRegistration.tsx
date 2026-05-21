@@ -14,6 +14,7 @@ import {
 import { auth, getCurrentUser } from '../utils/api';
 import MapView from '../components/MapView';
 import { FeedbackBanner, FeedbackModal } from '../components/Feedback';
+import { reverseGeocode } from '../utils/geocode';
 
 const ProviderRegistration = () => {
   const navigate = useNavigate();
@@ -25,7 +26,23 @@ const ProviderRegistration = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [mapLocation, setMapLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+
+  const handleMapSelect = async (lat: number, lng: number) => {
+    setMapLocation({ lat, lng });
+    setGeocoding(true);
+    try {
+      const result = await reverseGeocode(lat, lng);
+      if (result?.address) {
+        setAddress(result.address);
+      }
+    } catch {
+      // Keep the pin; the user can still type the address manually.
+    } finally {
+      setGeocoding(false);
+    }
+  };
 
   useEffect(() => {
     const user = getCurrentUser();
@@ -131,13 +148,16 @@ const ProviderRegistration = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">Full Address (Islamabad)</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant ml-1">
+                    Full Address (Islamabad)
+                    {geocoding && <span className="ml-2 normal-case tracking-normal text-primary">Filling from map…</span>}
+                  </label>
                   <textarea
                     required
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     className="w-full bg-surface-container-low border border-outline-variant/10 rounded-2xl px-6 py-4 focus:bg-white focus:ring-2 focus:ring-primary/20 transition-all outline-none resize-none font-medium"
-                    placeholder="Street number, Sector, Landmark..."
+                    placeholder="Type the address, or pin it on the map →"
                     rows={3}
                   />
                 </div>
@@ -238,7 +258,7 @@ const ProviderRegistration = () => {
                   zoom={13}
                   location={mapLocation ? { ...mapLocation, name, address } : undefined}
                   height="100%"
-                  onLocationSelect={(lat, lng) => setMapLocation({ lat, lng })}
+                  onLocationSelect={handleMapSelect}
                 />
               </div>
               <div className="border-t border-outline-variant/5 p-5">

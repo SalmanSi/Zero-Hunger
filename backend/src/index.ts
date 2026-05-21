@@ -8,6 +8,7 @@ import userRoutes from './routes/users';
 import geocodeRoutes from './routes/geocode';
 import rideRoutes from './routes/rides';
 import notificationRoutes from './routes/notifications';
+import ngoRoutes from './routes/ngos';
 import prisma from './utils/prisma';
 
 dotenv.config();
@@ -118,6 +119,7 @@ app.use('/api/admin/users', userRoutes);
 app.use('/api/geocode', geocodeRoutes);
 app.use('/api/rides', rideRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/ngos', ngoRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'ZeroHunger API is running' });

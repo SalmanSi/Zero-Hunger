@@ -65,7 +65,8 @@ router.post('/register',
           address: user.address,
           phone: user.phone,
           lat: user.lat,
-          lng: user.lng
+          lng: user.lng,
+          radius: user.radius
         }
       });
     } catch (error) {
@@ -118,7 +119,8 @@ router.post('/login',
           address: user.address,
           phone: user.phone,
           lat: user.lat,
-          lng: user.lng
+          lng: user.lng,
+          radius: user.radius
         }
       });
     } catch (error) {
@@ -155,7 +157,7 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
 
 router.patch('/profile', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const { name, address, phone, lat, lng } = req.body;
+    const { name, address, phone, lat, lng, radius } = req.body;
 
     const updatedUser = await prisma.user.update({
       where: { id: req.user!.id },
@@ -165,6 +167,7 @@ router.patch('/profile', authenticate, async (req: AuthRequest, res: Response) =
         ...(phone !== undefined && { phone }),
         ...(typeof lat === 'number' && { lat }),
         ...(typeof lng === 'number' && { lng }),
+        ...(typeof radius === 'number' && radius > 0 && { radius: Math.min(radius, 100) }),
       },
       select: {
         id: true,

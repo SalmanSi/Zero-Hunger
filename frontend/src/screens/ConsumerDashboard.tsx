@@ -28,6 +28,7 @@ import 'leaflet/dist/leaflet.css';
 import { listings as listingsApi, auth, getCurrentUser, rides } from '../utils/api';
 import SettingsPage from '../components/SettingsPage';
 import { FeedbackBanner } from '../components/Feedback';
+import { usePolling } from '../hooks/usePolling';
 
 interface Listing {
     id: string;
@@ -118,6 +119,7 @@ const ConsumerDashboard = () => {
     const [feedback, setFeedback] = useState<{ tone: 'success' | 'error' | 'info' | 'warning'; title: string; message?: string } | null>(null);
     const [routeLine, setRouteLine] = useState<[number, number][]>([]);
     const [routeMeta, setRouteMeta] = useState<{ distanceKm: number; durationMin?: number; routed: boolean } | null>(null);
+    const [savingRadius, setSavingRadius] = useState(false);
 
     const fetchListings = useCallback(async () => {
         try {
@@ -144,6 +146,20 @@ const ConsumerDashboard = () => {
         }
     }, []);
 
+    const handleRadiusChange = async (radius: number) => {
+        setSavingRadius(true);
+        try {
+            const updated = await auth.updateProfile({ radius });
+            setCurrentUser((prev: any) => ({ ...prev, ...updated }));
+            await fetchListings();
+            setFeedback({ tone: 'success', title: 'Search area updated', message: `Now showing listings within ${radius} km.` });
+        } catch (error: any) {
+            setFeedback({ tone: 'error', title: 'Could not update search area', message: error.message || 'Please try again.' });
+        } finally {
+            setSavingRadius(false);
+        }
+    };
+
     useEffect(() => {
         const user = getCurrentUser();
         if (!user) {
@@ -159,16 +175,12 @@ const ConsumerDashboard = () => {
         fetchRides();
     }, [currentUser, fetchListings, fetchRides]);
 
-    useEffect(() => {
-        let interval: ReturnType<typeof setInterval>;
-        if (activeTab === 'listings' || activeTab === 'claims') {
-            interval = setInterval(() => {
-                fetchListings();
-                fetchRides();
-            }, 30000);
-        }
-        return () => clearInterval(interval);
-    }, [activeTab, fetchListings, fetchRides]);
+    const refreshData = useCallback(() => {
+        fetchListings();
+        fetchRides();
+    }, [fetchListings, fetchRides]);
+
+    usePolling(refreshData, 10000, activeTab === 'listings' || activeTab === 'claims');
 
     const handleClaim = async (listingId: string) => {
         if (!currentUser) return;
@@ -558,9 +570,27 @@ const ConsumerDashboard = () => {
 
                 {activeTab === 'listings' && !loading && (
                     <div className="animate-fade-in">
-                        <header className="pb-8 pt-4">
-                            <h2 className="text-3xl font-headline font-black tracking-tight mb-1">Available Food Surplus</h2>
-                            <p className="text-slate-600 font-medium">Real-time alerts for {currentUser?.address || 'Islamabad'}</p>
+                        <header className="pb-8 pt-4 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                            <div>
+                                <h2 className="text-3xl font-headline font-black tracking-tight mb-1">Available Food Surplus</h2>
+                                <p className="text-slate-600 font-medium">Real-time alerts for {currentUser?.address || 'Islamabad'}</p>
+                            </div>
+                            <label className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
+                                <Navigation size={16} className="text-primary flex-shrink-0" />
+                                <span className="text-xs font-bold text-slate-600 whitespace-nowrap">Search area</span>
+                                <select
+                                    value={currentUser?.radius ?? 10}
+                                    onChange={(e) => handleRadiusChange(Number(e.target.value))}
+                                    disabled={savingRadius}
+                                    className="text-sm font-bold text-slate-800 bg-transparent focus:outline-none disabled:opacity-50"
+                                >
+                                    <option value={2}>Within 2 km</option>
+                                    <option value={5}>Within 5 km</option>
+                                    <option value={10}>Within 10 km</option>
+                                    <option value={25}>Within 25 km</option>
+                                    <option value={50}>Within 50 km</option>
+                                </select>
+                            </label>
                         </header>
 
                         {availableListings.length === 0 ? (
@@ -605,36 +635,35 @@ const ConsumerDashboard = () => {
                                             </div>
                                             
                                             <div className="flex flex-col gap-2 mt-2">
-                                                <button 
+                                                <button
                                                     onClick={() => openDetailsModal(listing)}
                                                     className="w-full py-2.5 bg-gradient-to-r from-primary to-green-600 text-white rounded-xl font-bold text-sm transition-all hover:shadow-lg hover:-translate-y-0.5 flex items-center justify-center gap-2"
                                                 >
                                                     <Info size={14} />
                                                     View Details
                                                 </button>
-                                                <button 
+                                                <button
                                                     onClick={() => openLocationMap(listing)}
                                                     className="w-full py-2.5 bg-gradient-to-r from-primary to-green-600 text-white rounded-xl font-bold text-sm transition-all hover:shadow-lg hover:-translate-y-0.5 flex items-center justify-center gap-2"
                                                 >
                                                     <Map size={14} />
                                                     View Map
                                                 </button>
+                                                <button
+                                                    onClick={() => handleClaim(listing.id)}
+                                                    disabled={claiming === listing.id}
+                                                    className="w-full py-2.5 bg-gradient-to-r from-primary to-green-600 text-white rounded-xl font-bold text-sm transition-all hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-50 flex items-center justify-center gap-2"
+                                                >
+                                                    {claiming === listing.id ? (
+                                                        <>
+                                                            <Loader2 size={14} className="animate-spin" />
+                                                            Claiming...
+                                                        </>
+                                                    ) : (
+                                                        'Claim Surplus'
+                                                    )}
+                                                </button>
                                             </div>
-                                            
-                                            <button
-                                                onClick={() => handleClaim(listing.id)}
-                                                disabled={claiming === listing.id}
-                                                className="w-full py-2.5 bg-gradient-to-r from-primary to-green-600 text-white rounded-xl font-bold text-sm transition-all hover:shadow-lg hover:-translate-y-0.5 disabled:opacity-50 flex items-center justify-center gap-2"
-                                            >
-                                                {claiming === listing.id ? (
-                                                    <>
-                                                        <Loader2 size={14} className="animate-spin" />
-                                                        Claiming...
-                                                    </>
-                                                ) : (
-                                                    'Claim Surplus'
-                                                )}
-                                            </button>
                                         </div>
                                     );
                                 })}

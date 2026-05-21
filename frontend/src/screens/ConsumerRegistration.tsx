@@ -1,19 +1,37 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Heart, ArrowLeft, ShieldCheck } from 'lucide-react';
+import { Heart, ArrowLeft, ShieldCheck, MapPin } from 'lucide-react';
 import { auth, getCurrentUser } from '../utils/api';
 import { FeedbackBanner, FeedbackModal } from '../components/Feedback';
+import MapView from '../components/MapView';
+import { reverseGeocode } from '../utils/geocode';
 
 const ConsumerRegistration = () => {
     const navigate = useNavigate();
     const [name, setName] = useState('');
     const [address, setAddress] = useState('');
     const [phone, setPhone] = useState('');
-    const [regNumber, setRegNumber] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [mapLocation, setMapLocation] = useState<{ lat: number; lng: number } | null>(null);
+    const [geocoding, setGeocoding] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
+
+    const handleMapSelect = async (lat: number, lng: number) => {
+        setMapLocation({ lat, lng });
+        setGeocoding(true);
+        try {
+            const result = await reverseGeocode(lat, lng);
+            if (result?.address) {
+                setAddress(result.address);
+            }
+        } catch {
+            // Keep the pin; the user can still type the address manually.
+        } finally {
+            setGeocoding(false);
+        }
+    };
 
     useEffect(() => {
         const user = getCurrentUser();
@@ -40,6 +58,8 @@ const ConsumerRegistration = () => {
                 password,
                 address,
                 phone,
+                lat: mapLocation?.lat,
+                lng: mapLocation?.lng,
                 role: 'CONSUMER'
             });
             setShowSuccess(true);
@@ -70,38 +90,50 @@ const ConsumerRegistration = () => {
                     </div>
 
                     <form onSubmit={handleSubmit} className="space-y-8">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Organization Name</label>
-                                <input
-                                    required
-                                    value={name}
-                                    onChange={(e) => setName(e.target.value)}
-                                    placeholder="e.g. Edhi Foundation"
-                                    className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Registration Number</label>
-                                <input
-                                    required
-                                    value={regNumber}
-                                    onChange={(e) => setRegNumber(e.target.value)}
-                                    placeholder="REG-123456"
-                                    className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
-                                />
-                            </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Organization Name</label>
+                            <input
+                                required
+                                value={name}
+                                onChange={(e) => setName(e.target.value)}
+                                placeholder="e.g. Edhi Foundation"
+                                className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none font-medium"
+                            />
                         </div>
 
                         <div className="space-y-2">
-                            <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">Headquarters Address</label>
+                            <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant ml-1">
+                                Headquarters Address
+                                {geocoding && <span className="ml-2 normal-case tracking-normal text-primary">Filling from map…</span>}
+                            </label>
                             <textarea
                                 required
                                 value={address}
                                 onChange={(e) => setAddress(e.target.value)}
-                                placeholder="Full physical address for pickup coordination"
+                                placeholder="Type the address, or pin it on the map below"
                                 className="w-full px-6 py-4 bg-surface-container-low rounded-2xl border border-outline-variant/10 focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all outline-none min-h-[120px] font-medium"
                             />
+                        </div>
+
+                        <div className="space-y-2">
+                            <div className="flex items-center gap-2 ml-1">
+                                <MapPin size={14} className="text-primary" />
+                                <label className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">Pin Your Location</label>
+                            </div>
+                            <div className="h-[300px] rounded-2xl overflow-hidden border border-outline-variant/10">
+                                <MapView
+                                    center={mapLocation ? [mapLocation.lat, mapLocation.lng] : [33.6844, 73.0479]}
+                                    zoom={13}
+                                    location={mapLocation ? { ...mapLocation, name, address } : undefined}
+                                    height="100%"
+                                    onLocationSelect={handleMapSelect}
+                                />
+                            </div>
+                            <p className="text-xs font-medium text-on-surface-variant ml-1">
+                                {mapLocation
+                                    ? `Selected coordinates: ${mapLocation.lat.toFixed(5)}, ${mapLocation.lng.toFixed(5)}`
+                                    : 'Click the map to pin your headquarters — the address fills in automatically.'}
+                            </p>
                         </div>
 
                         <div className="space-y-2">

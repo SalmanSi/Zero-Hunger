@@ -124,46 +124,9 @@ router.patch('/:rideId/arrive', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.patch('/:rideId/complete', async (req: AuthRequest, res: Response) => {
-  try {
-    const rideId = req.params.rideId as string;
-    const user = req.user!;
-
-    if (user.role !== 'CONSUMER') {
-      return res.status(403).json({ error: 'Only consumers can complete rides' });
-    }
-
-    const ride = await prisma.ride.findUnique({
-      where: { id: rideId }
-    });
-
-    if (!ride) {
-      return res.status(404).json({ error: 'Ride not found' });
-    }
-
-    if (ride.consumerId !== user.id) {
-      return res.status(403).json({ error: 'Not authorized' });
-    }
-
-    const updated = await prisma.ride.update({
-      where: { id: rideId },
-      data: { 
-        status: 'COMPLETED',
-        endTime: new Date()
-      }
-    });
-
-    await prisma.listing.update({
-      where: { id: ride.listingId },
-      data: { status: 'COMPLETED' }
-    });
-
-    res.json(updated);
-  } catch (error) {
-    console.error('Complete ride error:', error);
-    res.status(500).json({ error: 'Failed to complete ride' });
-  }
-});
+// Ride completion is provider-driven only — see /:rideId/confirm-handoff below.
+// A consumer self-complete route was removed because it bypassed provider handoff
+// confirmation and left listing/ride state inconsistent.
 
 router.patch('/:rideId/confirm-handoff', async (req: AuthRequest, res: Response) => {
   try {

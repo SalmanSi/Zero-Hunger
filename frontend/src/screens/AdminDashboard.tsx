@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
     ClipboardCheck,
@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { users as usersApi, auth, getCurrentUser } from '../utils/api';
 import { FeedbackBanner } from '../components/Feedback';
+import { usePolling } from '../hooks/usePolling';
 
 interface User {
     id: string;
@@ -50,24 +51,27 @@ const AdminDashboard = () => {
         }
     }, [navigate]);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const [usersData, statsData] = await Promise.all([
-                    usersApi.getAll(),
-                    usersApi.getStats()
-                ]);
-                setUsers(usersData);
-                setStats(statsData);
-                setListingsCount(statsData.listings || 0);
-            } catch (error) {
-                console.error('Failed to fetch data:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
+    const fetchData = useCallback(async () => {
+        try {
+            const [usersData, statsData] = await Promise.all([
+                usersApi.getAll(),
+                usersApi.getStats()
+            ]);
+            setUsers(usersData);
+            setStats(statsData);
+            setListingsCount(statsData.listings || 0);
+        } catch (error) {
+            console.error('Failed to fetch data:', error);
+        } finally {
+            setLoading(false);
+        }
     }, []);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    usePolling(fetchData, 10000);
 
     const handleStatusUpdate = async (userId: string, newStatus: 'APPROVED' | 'REJECTED') => {
         setActionLoading(userId);

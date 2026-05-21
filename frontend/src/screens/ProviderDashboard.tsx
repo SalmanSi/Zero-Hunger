@@ -33,7 +33,8 @@ import {
   Calendar,
   TrendingUp
 } from 'lucide-react';
-import { listings as listingsApi, auth, getCurrentUser, rides } from '../utils/api';
+import { listings as listingsApi, auth, getCurrentUser, rides, ngos as ngosApi } from '../utils/api';
+import { usePolling } from '../hooks/usePolling';
 import SettingsPage from '../components/SettingsPage';
 import MapView from '../components/MapView';
 import { FeedbackBanner, FeedbackModal } from '../components/Feedback';
@@ -52,6 +53,7 @@ interface Listing {
   pickupEnd: string;
   status: 'AVAILABLE' | 'CLAIMED' | 'EXPIRED' | 'COMPLETED';
   consumerId?: string;
+  consumer?: { name?: string; address?: string; phone?: string };
   rides?: Ride[];
 }
 
@@ -120,6 +122,18 @@ const ProviderDashboard = () => {
     .filter((listing) => listing.status === 'CLAIMED' || listing.status === 'COMPLETED')
     .reduce((sum, listing) => sum + listing.servings, 0);
 
+  // Active handoffs: every claim where a rider has arrived (ready to confirm) or is on the way.
+  const activeHandoffs = listings
+    .filter((listing) => listing.status !== 'COMPLETED')
+    .flatMap((listing) => {
+      const active = (listing.rides || []).find(
+        (ride: any) => ride.status === 'ARRIVED' || ride.status === 'IN_PROGRESS' || ride.status === 'PENDING'
+      );
+      return active ? [{ listing, ride: active }] : [];
+    })
+    // Arrived riders (awaiting handoff) first, then en route.
+    .sort((a, b) => (a.ride.status === 'ARRIVED' ? 0 : 1) - (b.ride.status === 'ARRIVED' ? 0 : 1));
+
   useEffect(() => {
     const user = getCurrentUser();
     if (!user) {
@@ -158,12 +172,12 @@ const ProviderDashboard = () => {
 
     const initFetch = async () => {
       try {
-        const [listingsData, usersData] = await Promise.all([
+        const [listingsData, ngosData] = await Promise.all([
           listingsApi.getAll('PROVIDER'),
-          listingsApi.getAll()
+          ngosApi.getNearby()
         ]);
         setListings(listingsData);
-        setNgos(usersData.filter((u: any) => u.role === 'CONSUMER' && u.status === 'APPROVED'));
+        setNgos(ngosData);
       } catch (error) {
         console.error('Failed to fetch data:', error);
       } finally {
@@ -171,10 +185,9 @@ const ProviderDashboard = () => {
       }
     };
     initFetch();
-
-    const pollInterval = setInterval(fetchListings, 10000);
-    return () => clearInterval(pollInterval);
   }, [currentUser]);
+
+  usePolling(fetchListings, 10000, !!currentUser);
 
   useEffect(() => {
     if (!isDetailsModalOpen || !selectedListing) return;
@@ -540,16 +553,49 @@ const ProviderDashboard = () => {
                   </div>
                 </div>
 
-                {lastClaimedListing && (
-                  <div className="bg-primary text-white rounded-[2rem] p-8 shadow-xl shadow-green-100">
-                    <div className="flex items-center gap-3 mb-4">
-                      <BellRing size={20} />
-                      <span className="text-xs font-bold uppercase tracking-widest">Claimed - Rider En Route</span>
+                {activeHandoffs.length > 0 && (
+                  <div className="bg-white rounded-[2rem] border border-outline-variant/10 p-8 shadow-sm">
+                    <div className="flex items-center gap-3 mb-6">
+                      <BellRing size={20} className="text-primary" />
+                      <h3 className="font-headline font-bold text-xl">Pending Handovers</h3>
+                      <span className="ml-auto text-xs font-bold bg-primary-fixed text-on-primary-fixed-variant rounded-full px-2.5 py-1">
+                        {activeHandoffs.length}
+                      </span>
                     </div>
-                    <p className="font-bold text-lg mb-4">"{lastClaimedListing.description}" has been claimed.</p>
-                    <div className="bg-white/20 p-4 rounded-xl backdrop-blur-sm space-y-2">
-                      <p className="text-xs font-medium">• {lastClaimedListing.servings} servings • {lastClaimedListing.foodType}</p>
-                      <p className="text-xs font-medium">Please have the items packed and ready for pickup.</p>
+                    <div className="space-y-4">
+                      {activeHandoffs.map(({ listing, ride }) => {
+                        const arrived = ride.status === 'ARRIVED';
+                        const consumerName = (ride as any).consumer?.name || listing.consumer?.name || 'The NGO';
+                        return (
+                          <div
+                            key={ride.id}
+                            className={`rounded-2xl p-5 border ${arrived ? 'bg-primary/5 border-primary/30' : 'bg-surface-container-low border-outline-variant/10'}`}
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <p className="font-bold leading-tight">{listing.description}</p>
+                              <span className={`text-[10px] font-bold uppercase tracking-widest rounded-full px-2 py-1 whitespace-nowrap ${arrived ? 'bg-primary text-white' : 'bg-outline-variant/20 text-on-surface-variant'}`}>
+                                {arrived ? 'Awaiting handoff' : 'En route'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-on-surface-variant mb-4">
+                              {listing.servings} servings • {listing.foodType} • {consumerName}
+                            </p>
+                            {arrived ? (
+                              <button
+                                onClick={() => handleConfirmHandoff(ride.id)}
+                                disabled={confirmingRideId === ride.id}
+                                className="w-full bg-primary text-white font-bold py-2.5 rounded-xl hover:bg-primary/90 transition-all disabled:opacity-60"
+                              >
+                                {confirmingRideId === ride.id ? 'Confirming…' : 'Confirm Handoff'}
+                              </button>
+                            ) : (
+                              <p className="text-xs font-medium text-on-surface-variant">
+                                Rider on the way — have the items packed and ready for pickup.
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -561,8 +607,15 @@ const ProviderDashboard = () => {
             <div className="space-y-8">
               <div className="max-w-xl">
                 <h2 className="text-3xl font-headline font-bold mb-4">Nearby NGOs</h2>
-                <p className="text-on-surface-variant">We've identified these verified rescue partners within a 5km radius of your location.</p>
+                <p className="text-on-surface-variant">Verified rescue partners approved on the platform, closest to you first.</p>
               </div>
+              {ngos.length === 0 ? (
+                <div className="bg-white rounded-3xl border border-outline-variant/10 p-10 text-center">
+                  <Heart size={32} className="mx-auto text-on-surface-variant/40 mb-3" />
+                  <p className="font-bold">No approved NGOs yet</p>
+                  <p className="text-sm text-on-surface-variant mt-1">Verified rescue partners will appear here once an admin approves them.</p>
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {ngos.map(ngo => (
                   <div key={ngo.id} className="bg-white p-6 rounded-3xl border border-outline-variant/10 shadow-sm hover:translate-y-[-4px] transition-all">
@@ -582,13 +635,29 @@ const ProviderDashboard = () => {
                         <MapPin size={16} className="flex-shrink-0" />
                         <span className="truncate">{ngo.address}</span>
                       </div>
+                      {typeof ngo.distanceKm === 'number' && (
+                        <p className="text-xs font-bold text-primary">{ngo.distanceKm.toFixed(1)} km away</p>
+                      )}
                     </div>
-                    <button className="w-full py-3 bg-surface-container-high rounded-xl text-sm font-bold text-on-surface hover:bg-surface-container-highest transition-colors">
-                      Collaborate
-                    </button>
+                    {ngo.phone ? (
+                      <a
+                        href={`tel:${ngo.phone}`}
+                        className="w-full py-3 bg-surface-container-high rounded-xl text-sm font-bold text-on-surface hover:bg-surface-container-highest transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Phone size={16} /> Collaborate
+                      </a>
+                    ) : (
+                      <button
+                        onClick={() => setFeedback({ tone: 'info', title: 'No contact number', message: `${ngo.name} hasn't shared a phone number yet.` })}
+                        className="w-full py-3 bg-surface-container-high rounded-xl text-sm font-bold text-on-surface hover:bg-surface-container-highest transition-colors"
+                      >
+                        Collaborate
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
+              )}
             </div>
           )}
 

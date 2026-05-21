@@ -139,6 +139,7 @@ export const auth = {
     phone?: string;
     lat?: number;
     lng?: number;
+    radius?: number;
   }) => {
     const updatedUser = await api.patch('/auth/profile', userData);
     const currentUser = getCurrentUser();
@@ -221,6 +222,12 @@ export const users = {
   }
 };
 
+export const ngos = {
+  getNearby: async () => {
+    return api.get('/ngos');
+  }
+};
+
 export const geocode = {
   getCoords: async (address: string) => {
     const response = await fetch(`${API_BASE_URL}/geocode/geocode?address=${encodeURIComponent(address)}`);
@@ -251,10 +258,6 @@ export const rides = {
 
   arrive: async (rideId: string) => {
     return api.patch(`/rides/${rideId}/arrive`);
-  },
-
-  complete: async (rideId: string) => {
-    return api.patch(`/rides/${rideId}/complete`);
   },
 
   confirmHandoff: async (rideId: string) => {
