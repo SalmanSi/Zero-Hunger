@@ -1,12 +1,14 @@
 FE design on stich: https://stitch.withgoogle.com/projects/15788824446682183393
 
-## EC2 backend (eu-north-1)
+## Backend deployment
 
-- public-ip: 13.61.233.84
-- private dns: ip-172-31-44-178.eu-north-1.compute.internal
-- ssh: `ssh -i zerohunger-ssh.pem ec2-user@13.61.233.84`
-- api base (TLS via nginx + sslip.io): https://13.61.233.84.sslip.io/api
-- health: https://13.61.233.84.sslip.io/api/health
+The backend runs on an EC2 instance (eu-north-1) behind nginx, with TLS
+terminated via nginx + sslip.io. Deploys are automated through the
+`Deploy backend to EC2` GitHub Actions workflow on pushes to `main`.
+
+Connection details (host, SSH key, user, app dir) are stored as GitHub
+Actions secrets (`EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`, `EC2_APP_DIR`) and are
+intentionally not committed to this public repository.
 
 Note: the instance has no Elastic IP, so the public IP changes on stop/start.
-If it changes, update this file and the `EC2_HOST` GitHub secret.
+If it changes, update the `EC2_HOST` GitHub secret.
